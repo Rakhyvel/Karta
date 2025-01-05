@@ -62,13 +62,8 @@ impl KartaFile {
         file_contents.push('\n'); // This is required to make the tokenizer happy
 
         let mut atoms = AtomMap::new();
-        let nil_atom_id = atoms.put_atoms_in_set(".nil");
-        atoms.put_atoms_in_set(".t");
-        atoms.put_atoms_in_set(".head");
-        atoms.put_atoms_in_set(".tail");
 
-        let mut ast_heap = AstHeap::new();
-        ast_heap.create_atom(nil_atom_id);
+        let mut ast_heap = AstHeap::new(&mut atoms);
 
         let mut parser = Parser::new();
         let root = parser.parse(file_contents, &mut ast_heap, &mut atoms)?;
@@ -161,6 +156,21 @@ mod tests {
         for elem in karta_file.query() {
             assert_eq!(counter, elem.as_int::<i64>()?);
             counter += 1;
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn double_list_iterator() -> Result<(), String> {
+        let karta_file = KartaFile::new(String::from("[[1, 2, 3], [4, 5, 6], [7, 8, 9]]"))?;
+
+        let mut counter: i64 = 1;
+        for elem in karta_file.query() {
+            for elem2 in elem {
+                assert_eq!(counter, elem2.as_int::<i64>()?);
+                counter += 1;
+            }
         }
 
         Ok(())

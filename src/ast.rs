@@ -1,16 +1,31 @@
 use std::{collections::HashMap, fmt::Display};
 
-use crate::atom::AtomId;
+use crate::atom::{AtomId, AtomMap};
 
 /// Contains the ASTs used in a Karta file
 pub(crate) struct AstHeap {
     asts: Vec<Ast>,
+
+    nil_id: AstId,
+    empty_map_id: AstId,
 }
 
 impl AstHeap {
     /// Create a new Ast Heap
-    pub(crate) fn new() -> Self {
-        Self { asts: vec![] }
+    pub(crate) fn new(atoms: &mut AtomMap) -> Self {
+        let mut retval = Self {
+            asts: vec![],
+            nil_id: AstId::new(0),
+            empty_map_id: AstId::new(1),
+        };
+
+        let nil_atom_id = atoms.put_atoms_in_set(".nil");
+        retval.nil_id = retval.create_atom(nil_atom_id);
+
+        let empty_map = HashMap::new();
+        retval.empty_map_id = retval.create_map(empty_map);
+
+        retval
     }
 
     /// Inserts a new Ast into the heap, and returns it's ID
@@ -52,7 +67,11 @@ impl AstHeap {
 
     /// Returns the AstId of the nil atom
     pub(crate) fn nil_atom(&self) -> AstId {
-        AstId::new(0)
+        self.nil_id // TODO: This should be created when the heap is created, and the id stored
+    }
+
+    pub(crate) fn empty_map(&self) -> AstId {
+        self.empty_map_id
     }
 
     /// Creates a linked-list node out of a map Ast
@@ -64,7 +83,7 @@ impl AstHeap {
     ) -> AstId {
         let mut fields: HashMap<AtomId, AstId> = HashMap::new();
         fields.insert(head_atom, head);
-        fields.insert(tail_atom, self.nil_atom());
+        fields.insert(tail_atom, self.empty_map());
         self.create_map(fields)
     }
 

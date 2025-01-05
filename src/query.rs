@@ -139,7 +139,21 @@ impl<'a> KartaQuery<'a> {
         Ok(!(self.truthy()?))
     }
 
-    // TODO: Implement IntoIterator for lists
+    fn is_empty_map(&self) -> Result<bool, String> {
+        if let Ok(current_result) = self.current_result {
+            let ast = self
+                .file
+                .ast_heap()
+                .get(current_result)
+                .expect("couldn't get Ast for AstId");
+            match ast {
+                Ast::Map(x) => Ok(x.len() == 0),
+                _ => Ok(false),
+            }
+        } else {
+            Err(self.current_result.clone().unwrap_err())
+        }
+    }
 }
 
 impl<'a> IntoIterator for KartaQuery<'a> {
@@ -160,14 +174,13 @@ impl<'a> Iterator for KartaListIterator<'a> {
     type Item = KartaQuery<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let retval = self.query.clone().get_atom(".head");
-
-        let tail = self.query.clone().get_atom(".tail");
-        if tail.truthy().unwrap_or(false) {
-            self.query = tail.clone();
-            Some(retval)
-        } else {
+        if self.query.is_empty_map().unwrap() {
             None
+        } else {
+            let head = self.query.clone().get_atom(".head");
+            let tail = self.query.clone().get_atom(".tail");
+            self.query = tail;
+            Some(head)
         }
     }
 }
