@@ -5,6 +5,11 @@
 //! - [ ] Add AtomMap
 //! - [ ] Add tests, maybe even unit tests!
 //! - [ ] Implement IntoIterator for lists
+//! - [ ] Add readme with BASIC run down on Karta
+//!     - Dynamically typed, haskell-y (lazy) lisp that's also great for data description
+//!     - Everything is a map, map get syntax looks like/is indistiguishable from function call
+//!     - Predicate-based types
+//!     - Open multimethods
 //! - [ ] Implement new file syntax, and true identifier tokenization
 //! - [ ] Implement REPL
 //! - [ ] Add basic operators
@@ -33,20 +38,17 @@ pub mod parser;
 pub mod query;
 pub mod tokenizer;
 
-use std::{
-    collections::HashMap,
-    fs::{self},
-};
+use std::fs::{self};
 
 use ast::{AstHeap, AstId};
-use atom::AtomId;
+use atom::AtomMap;
 use parser::Parser;
 use query::KartaQuery;
 
 /// Represents a file after being parsed
 pub struct KartaFile {
     /// Maps atom string representations to their atom id
-    atoms: HashMap<String, AtomId>,
+    atoms: AtomMap,
     /// The AstHeap ID of the root AST expression for this karta file
     root: AstId,
     /// Heap of all Asts, can be accessed with an AstId
@@ -56,11 +58,11 @@ pub struct KartaFile {
 impl KartaFile {
     /// Create and parse a new Karta file from file contents. Returns an error if tokenization or parsing fails.
     pub fn new(file_contents: String) -> Result<Self, String> {
-        let mut atoms = HashMap::new();
-        let nil_atom_id = put_atoms_in_set(&mut atoms, String::from(".nil"));
-        put_atoms_in_set(&mut atoms, String::from(".t"));
-        put_atoms_in_set(&mut atoms, String::from(".head"));
-        put_atoms_in_set(&mut atoms, String::from(".tail"));
+        let mut atoms = AtomMap::new();
+        let nil_atom_id = atoms.put_atoms_in_set(".nil");
+        atoms.put_atoms_in_set(".t");
+        atoms.put_atoms_in_set(".head");
+        atoms.put_atoms_in_set(".tail");
 
         let mut ast_heap = AstHeap::new();
         ast_heap.create_atom(nil_atom_id);
@@ -96,18 +98,7 @@ impl KartaFile {
     }
 
     /// The atoms map for this Karta file
-    fn atoms(&self) -> &HashMap<String, AtomId> {
+    fn atoms(&self) -> &AtomMap {
         &self.atoms
-    }
-}
-
-/// Puts and returns the ID of an atom
-fn put_atoms_in_set(atoms: &mut HashMap<String, AtomId>, atom: String) -> AtomId {
-    if let Some(the_atom) = atoms.get(&atom) {
-        return *the_atom;
-    } else {
-        let the_atom = AtomId::new(atoms.len());
-        atoms.insert(atom, the_atom);
-        the_atom
     }
 }

@@ -1,6 +1,31 @@
-use std::fmt::Display;
+use std::{collections::HashMap, fmt::Display};
 
-// TODO: Add AtomMap which maps Strings to AtomIds
+pub(crate) struct AtomMap {
+    atoms: HashMap<String, AtomId>,
+}
+
+impl AtomMap {
+    pub(crate) fn new() -> Self {
+        Self {
+            atoms: HashMap::new(),
+        }
+    }
+
+    pub(crate) fn put_atoms_in_set(&mut self, atom: &str) -> AtomId {
+        let atom_string = String::from(atom);
+        if let Some(the_atom) = self.atoms.get(&atom_string) {
+            return *the_atom;
+        } else {
+            let the_atom = AtomId::new(self.atoms.len());
+            self.atoms.insert(atom_string, the_atom);
+            the_atom
+        }
+    }
+
+    pub(crate) fn get(&self, key: &str) -> Option<&AtomId> {
+        self.atoms.get(&String::from(key))
+    }
+}
 
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
 /// Unique identifier of an Atom in the file's vector of Atoms

@@ -34,7 +34,7 @@ impl<'a> KartaQuery<'a> {
             .get(current_result)
             .expect("couldn't get Ast for AstId");
 
-        let field_atom_id = match self.file.atoms().get(&String::from(field)) {
+        let field_atom_id = match self.file.atoms().get(field) {
             Some(x) => x,
             None => return self,
         };

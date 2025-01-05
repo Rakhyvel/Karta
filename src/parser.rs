@@ -2,8 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     ast::{Ast, AstHeap, AstId},
-    atom::AtomId,
-    put_atoms_in_set,
+    atom::{AtomId, AtomMap},
     tokenizer::{Token, TokenKind, Tokenizer},
 };
 
@@ -27,7 +26,7 @@ impl Parser {
         &mut self,
         file_contents: String,
         ast_heap: &mut AstHeap,
-        atoms: &mut HashMap<String, AtomId>,
+        atoms: &mut AtomMap,
     ) -> Result<AstId, String> {
         let mut tokenizer = Tokenizer::new(file_contents);
         let _ = tokenizer.tokenize(&mut self.tokens).unwrap();
@@ -82,7 +81,7 @@ impl Parser {
     fn parse_expression(
         &mut self,
         ast_heap: &mut AstHeap,
-        atoms: &mut HashMap<String, AtomId>,
+        atoms: &mut AtomMap,
     ) -> Result<AstId, String> {
         if let Some(token) = self.accept(TokenKind::Integer) {
             Ok(ast_heap.create_int(token.data.parse::<i64>().unwrap()))
@@ -94,7 +93,7 @@ impl Parser {
             let token_len = token.data.len();
             Ok(ast_heap.create_string(String::from(&token.data[1..token_len - 1])))
         } else if let Some(token) = self.accept(TokenKind::Atom) {
-            let atom_value = put_atoms_in_set(atoms, token.data.clone());
+            let atom_value = atoms.put_atoms_in_set(&token.data.as_str());
             Ok(ast_heap.create_atom(atom_value))
         } else if let Some(_token) = self.accept(TokenKind::LeftBrace) {
             let mut children: HashMap<AtomId, AstId> = HashMap::new();
@@ -117,8 +116,8 @@ impl Parser {
 
             Ok(ast_heap.create_map(children))
         } else if let Some(_token) = self.accept(TokenKind::LeftSquare) {
-            let head_atom = put_atoms_in_set(atoms, String::from(".head"));
-            let tail_atom = put_atoms_in_set(atoms, String::from(".tail"));
+            let head_atom = atoms.put_atoms_in_set(".head");
+            let tail_atom = atoms.put_atoms_in_set(".tail");
 
             if self.accept(TokenKind::RightSquare).is_some() {
                 Ok(ast_heap.nil_atom())
