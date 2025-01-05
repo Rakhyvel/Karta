@@ -2,17 +2,18 @@
 //! - [x] Add queries
 //! - [x] Move to own crate
 //! - [x] Split up into ast.rs, parser.rs, tokenizer.rs, error.rs, query.rs, lib.rs
-//! - [ ] Add AtomMap
-//! - [ ] Add tests, maybe even unit tests!
-//! - [ ] Implement IntoIterator for lists
-//! - [ ] Add readme with BASIC run down on Karta
+//! - [x] Add AtomMap
+//! - [ ] ! Add tests, maybe even unit tests!
+//! - [ ] ! Implement IntoIterator for lists
+//! - [ ] ! Add readme with BASIC run down on Karta
 //!     - Dynamically typed, haskell-y (lazy) lisp that's also great for data description
 //!     - Everything is a map, map get syntax looks like/is indistiguishable from function call
 //!     - Predicate-based types
 //!     - Open multimethods
-//! - [ ] Implement new file syntax, and true identifier tokenization
+//! - [ ] ! Implement new file syntax, and true identifier tokenization
 //! - [ ] Implement REPL
 //! - [ ] Add basic operators
+//!     - == != < <= > >= + - * / % // ** && || ^^ not >> << neg ~ ()
 //! - [ ] Add `let` ... `in`
 //! - [ ] Add `where`
 //! - [ ] Maps with fields other than strict atoms
@@ -33,10 +34,10 @@
 //! - [ ] `$` for parens until end of line
 
 pub mod ast;
-pub mod atom;
-pub mod parser;
+mod atom;
+mod parser;
 pub mod query;
-pub mod tokenizer;
+mod tokenizer;
 
 use std::fs::{self};
 
@@ -57,7 +58,9 @@ pub struct KartaFile {
 
 impl KartaFile {
     /// Create and parse a new Karta file from file contents. Returns an error if tokenization or parsing fails.
-    pub fn new(file_contents: String) -> Result<Self, String> {
+    pub fn new(mut file_contents: String) -> Result<Self, String> {
+        file_contents.push('\n'); // This is required to make the tokenizer happy
+
         let mut atoms = AtomMap::new();
         let nil_atom_id = atoms.put_atoms_in_set(".nil");
         atoms.put_atoms_in_set(".t");
@@ -79,11 +82,10 @@ impl KartaFile {
 
     /// Create and parse a new Karta file from a file. Returns an error if reading the file, tokenization, or parsing fails.
     pub fn from_file(filename: &str) -> Result<Self, String> {
-        let mut file_contents: String = match fs::read_to_string(filename) {
+        let file_contents: String = match fs::read_to_string(filename) {
             Ok(c) => c,
             Err(x) => return Err(x.to_string()),
         };
-        file_contents.push('\n'); // This is required to make the tokenizer happy
         Self::new(file_contents)
     }
 
@@ -100,5 +102,54 @@ impl KartaFile {
     /// The atoms map for this Karta file
     fn atoms(&self) -> &AtomMap {
         &self.atoms
+    }
+}
+
+mod tests {
+    #[cfg(test)]
+    use super::*;
+
+    #[test]
+    fn get_atom_int() -> Result<(), String> {
+        let karta_file = KartaFile::new(String::from("{.test-atom = 4}"))?;
+
+        let res: i64 = karta_file.query().get_atom(".test-atom").as_int()?;
+
+        assert_eq!(res, 4);
+        Ok(())
+    }
+
+    #[test]
+    fn get_atom_floats() -> Result<(), String> {
+        let karta_file = KartaFile::new(String::from("{.test-atom = 4.5}"))?;
+
+        let res: f64 = karta_file.query().get_atom(".test-atom").as_float()?;
+
+        assert_eq!(res, 4.5);
+        Ok(())
+    }
+
+    #[test]
+    fn get_atom_string() -> Result<(), String> {
+        let karta_file = KartaFile::new(String::from("{.test-atom = \"Hello, World!\"}"))?;
+
+        let binding = karta_file.query().get_atom(".test-atom");
+        let res: &str = binding.as_string()?;
+
+        assert_eq!(res, "Hello, World!");
+        Ok(())
+    }
+
+    #[test]
+    fn truthy_falsey() -> Result<(), String> {
+        let karta_file = KartaFile::new(String::from("{.test-atom1 = .t, .test-atom2 = .nil}"))?;
+
+        let test_atom1 = karta_file.query().get_atom(".test-atom1").truthy()?;
+        let test_atom2 = karta_file.query().get_atom(".test-atom2").truthy()?;
+
+        assert!(test_atom1);
+        assert!(!test_atom2);
+
+        Ok(())
     }
 }

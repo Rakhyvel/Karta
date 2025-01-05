@@ -36,11 +36,14 @@ impl<'a> KartaQuery<'a> {
 
         let field_atom_id = match self.file.atoms().get(field) {
             Some(x) => x,
-            None => return self,
+            None => {
+                self.current_result = Ok(AstId::new(0));
+                return self;
+            }
         };
 
         self.current_result = match root_ast {
-            Ast::Map(map) => Ok(map.get(&field_atom_id).copied().unwrap_or(AstId::new(0))),
+            Ast::Map(map) => Ok(*map.get(&field_atom_id).expect("unreachable code")),
             _ => Err(format!("cannot call `get` on {:?} type AST", root_ast)),
         };
 

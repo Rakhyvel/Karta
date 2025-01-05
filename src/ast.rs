@@ -9,7 +9,7 @@ pub(crate) struct AstHeap {
 
 impl AstHeap {
     /// Create a new Ast Heap
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self { asts: vec![] }
     }
 
@@ -21,42 +21,47 @@ impl AstHeap {
     }
 
     /// Inserts an integer Ast, and returns it's ID
-    pub fn create_int(&mut self, value: i64) -> AstId {
+    pub(crate) fn create_int(&mut self, value: i64) -> AstId {
         self.insert(Ast::Int(value))
     }
 
     /// Inserts a float Ast, and returns it's ID
-    pub fn create_float(&mut self, value: f64) -> AstId {
+    pub(crate) fn create_float(&mut self, value: f64) -> AstId {
         self.insert(Ast::Float(value))
     }
 
     /// Inserts a char Ast, and returns it's ID
-    pub fn create_char(&mut self, value: u8) -> AstId {
+    pub(crate) fn create_char(&mut self, value: u8) -> AstId {
         self.insert(Ast::Char(value))
     }
 
     /// Inserts a string Ast, and returns it's ID
-    pub fn create_string(&mut self, value: String) -> AstId {
+    pub(crate) fn create_string(&mut self, value: String) -> AstId {
         self.insert(Ast::String(value))
     }
 
     /// Inserts an atom Ast, and returns it's ID
-    pub fn create_atom(&mut self, value: AtomId) -> AstId {
+    pub(crate) fn create_atom(&mut self, value: AtomId) -> AstId {
         self.insert(Ast::Atom(value))
     }
 
     /// Inserts a map Ast, and returns it's ID
-    pub fn create_map(&mut self, value: HashMap<AtomId, AstId>) -> AstId {
+    pub(crate) fn create_map(&mut self, value: HashMap<AtomId, AstId>) -> AstId {
         self.insert(Ast::Map(value))
     }
 
     /// Returns the AstId of the nil atom
-    pub fn nil_atom(&self) -> AstId {
+    pub(crate) fn nil_atom(&self) -> AstId {
         AstId::new(0)
     }
 
     /// Creates a linked-list node out of a map Ast
-    pub fn make_list_node(&mut self, head_atom: AtomId, head: AstId, tail_atom: AtomId) -> AstId {
+    pub(crate) fn make_list_node(
+        &mut self,
+        head_atom: AtomId,
+        head: AstId,
+        tail_atom: AtomId,
+    ) -> AstId {
         let mut fields: HashMap<AtomId, AstId> = HashMap::new();
         fields.insert(head_atom, head);
         fields.insert(tail_atom, self.nil_atom());
@@ -64,12 +69,12 @@ impl AstHeap {
     }
 
     /// Retrieves a reference to an Ast for a given ID, if it exists
-    pub fn get(&self, ast_id: AstId) -> Option<&Ast> {
+    pub(crate) fn get(&self, ast_id: AstId) -> Option<&Ast> {
         self.asts.get(ast_id.as_usize())
     }
 
     /// Retrieves a mutable reference to an Ast for a given ID, if it exists
-    pub fn get_mut(&mut self, ast_id: AstId) -> Option<&mut Ast> {
+    pub(crate) fn get_mut(&mut self, ast_id: AstId) -> Option<&mut Ast> {
         self.asts.get_mut(ast_id.as_usize())
     }
 }
