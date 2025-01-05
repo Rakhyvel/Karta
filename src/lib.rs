@@ -4,7 +4,7 @@
 //! - [x] Split up into ast.rs, parser.rs, tokenizer.rs, error.rs, query.rs, lib.rs
 //! - [x] Add AtomMap
 //! - [x] ! Add tests, maybe even unit tests!
-//! - [ ] ! Implement IntoIterator for lists
+//! - [x] ! Implement IntoIterator for lists
 //! - [ ] ! Add readme with BASIC run down on Karta
 //!     - Dynamically typed, haskell-y (lazy) lisp that's also great for data description
 //!     - Everything is a map, map get syntax looks like/is indistiguishable from function call
