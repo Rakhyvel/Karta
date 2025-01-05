@@ -3,6 +3,7 @@ use crate::{
     KartaFile,
 };
 
+#[derive(Clone)]
 /// A struct representing a query over a Karta file and it's intermediate result
 pub struct KartaQuery<'a> {
     /// The Karta file that this query is over
@@ -139,4 +140,34 @@ impl<'a> KartaQuery<'a> {
     }
 
     // TODO: Implement IntoIterator for lists
+}
+
+impl<'a> IntoIterator for KartaQuery<'a> {
+    type Item = KartaQuery<'a>;
+
+    type IntoIter = KartaListIterator<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        KartaListIterator { query: self }
+    }
+}
+
+pub struct KartaListIterator<'a> {
+    query: KartaQuery<'a>,
+}
+
+impl<'a> Iterator for KartaListIterator<'a> {
+    type Item = KartaQuery<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let retval = self.query.clone().get_atom(".head");
+
+        let tail = self.query.clone().get_atom(".tail");
+        if tail.truthy().unwrap_or(false) {
+            self.query = tail.clone();
+            Some(retval)
+        } else {
+            None
+        }
+    }
 }
