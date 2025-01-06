@@ -31,7 +31,23 @@ impl Parser {
         let mut tokenizer = Tokenizer::new(file_contents);
         let _ = tokenizer.tokenize(&mut self.tokens).unwrap();
 
-        self.parse_expression(ast_heap, atoms)
+        println!("{:?}", self.tokens);
+
+        let mut bindings: HashMap<AtomId, AstId> = HashMap::new();
+        while !self.eos() {
+            let identifier = self.expect(TokenKind::Identifier)?.clone();
+            let _ = self.expect(TokenKind::Assign)?;
+            let value = self.parse_expression(ast_heap, atoms)?;
+
+            // TODO: Expect newline token, add newline tokens, and probably layout once I add parens
+
+            let key = atoms.put_atoms_in_set(&identifier.data);
+
+            println!("{:?} = {:?}", key, value);
+            bindings.insert(key, value);
+        }
+
+        Ok(ast_heap.create_map(bindings))
     }
 
     /// Returns the token at the begining of the stream without removing it
@@ -47,7 +63,7 @@ impl Parser {
 
     /// Returns whether or not the parser is at the end of the stream
     fn eos(&self) -> bool {
-        self.cursor >= self.tokens.len()
+        self.cursor >= self.tokens.len() || self.peek().kind == TokenKind::EndOfFile
     }
 
     /// Creates a parser error, with an expectation and what was actually received

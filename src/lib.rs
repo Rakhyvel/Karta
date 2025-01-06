@@ -5,12 +5,12 @@
 //! - [x] Add AtomMap
 //! - [x] ! Add tests, maybe even unit tests!
 //! - [x] ! Implement IntoIterator for lists
-//! - [ ] ! Add readme with BASIC run down on Karta
+//! - [x] ! Add readme with BASIC run down on Karta
 //!     - Dynamically typed, haskell-y (lazy) lisp that's also great for data description
 //!     - Everything is a map, map get syntax looks like/is indistiguishable from function call
 //!     - Predicate-based types
 //!     - Open multimethods
-//! - [ ] ! Implement new file syntax, and true identifier tokenization
+//! - [x] ! Implement new file syntax, and true identifier tokenization
 //! - [ ] Implement REPL
 //! - [ ] Add basic operators
 //!     - == != < <= > >= + - * / % // ** && || ^^ not >> << neg ~ ()
@@ -58,7 +58,8 @@ pub struct KartaFile {
 
 impl KartaFile {
     /// Create and parse a new Karta file from file contents. Returns an error if tokenization or parsing fails.
-    pub fn new(mut file_contents: String) -> Result<Self, String> {
+    pub fn new(file_contents: impl ToString) -> Result<Self, String> {
+        let mut file_contents = file_contents.to_string();
         file_contents.push('\n'); // This is required to make the tokenizer happy
 
         let mut atoms = AtomMap::new();
@@ -105,10 +106,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn get_atom_int() -> Result<(), String> {
-        let karta_file = KartaFile::new(String::from("{.test-atom = 4}"))?;
+    fn basic_variable() -> Result<(), String> {
+        let karta_file = KartaFile::new("x = 100")?;
 
-        let res: i64 = karta_file.query().get_atom(".test-atom").as_int()?;
+        let res: i64 = karta_file.query().get_atom("x").as_int()?;
+
+        assert_eq!(res, 100);
+
+        Ok(())
+    }
+
+    #[test]
+    fn get_atom_int() -> Result<(), String> {
+        let karta_file = KartaFile::new("test = {.test-atom = 4}")?;
+
+        let res: i64 = karta_file
+            .query()
+            .get_atom("test")
+            .get_atom(".test-atom")
+            .as_int()?;
 
         assert_eq!(res, 4);
         Ok(())
@@ -116,9 +132,13 @@ mod tests {
 
     #[test]
     fn get_atom_floats() -> Result<(), String> {
-        let karta_file = KartaFile::new(String::from("{.test-atom = 4.5}"))?;
+        let karta_file = KartaFile::new("test = {.test-atom = 4.5}")?;
 
-        let res: f64 = karta_file.query().get_atom(".test-atom").as_float()?;
+        let res: f64 = karta_file
+            .query()
+            .get_atom("test")
+            .get_atom(".test-atom")
+            .as_float()?;
 
         assert_eq!(res, 4.5);
         Ok(())
@@ -126,9 +146,9 @@ mod tests {
 
     #[test]
     fn get_atom_string() -> Result<(), String> {
-        let karta_file = KartaFile::new(String::from("{.test-atom = \"Hello, World!\"}"))?;
+        let karta_file = KartaFile::new("test = {.test-atom = \"Hello, World!\"}")?;
 
-        let binding = karta_file.query().get_atom(".test-atom");
+        let binding = karta_file.query().get_atom("test").get_atom(".test-atom");
         let res: &str = binding.as_string()?;
 
         assert_eq!(res, "Hello, World!");
@@ -137,10 +157,18 @@ mod tests {
 
     #[test]
     fn truthy_falsey() -> Result<(), String> {
-        let karta_file = KartaFile::new(String::from("{.test-atom1 = .t, .test-atom2 = .nil}"))?;
+        let karta_file = KartaFile::new("test = {.test-atom1 = .t, .test-atom2 = .nil}")?;
 
-        let test_atom1 = karta_file.query().get_atom(".test-atom1").truthy()?;
-        let test_atom2 = karta_file.query().get_atom(".test-atom2").truthy()?;
+        let test_atom1 = karta_file
+            .query()
+            .get_atom("test")
+            .get_atom(".test-atom1")
+            .truthy()?;
+        let test_atom2 = karta_file
+            .query()
+            .get_atom("test")
+            .get_atom(".test-atom2")
+            .truthy()?;
 
         assert!(test_atom1);
         assert!(!test_atom2);
@@ -150,10 +178,10 @@ mod tests {
 
     #[test]
     fn list_iterator() -> Result<(), String> {
-        let karta_file = KartaFile::new(String::from("[1, 2, 3]"))?;
+        let karta_file = KartaFile::new("test = [1, 2, 3]")?;
 
         let mut counter: i64 = 1;
-        for elem in karta_file.query() {
+        for elem in karta_file.query().get_atom("test") {
             assert_eq!(counter, elem.as_int::<i64>()?);
             counter += 1;
         }
@@ -163,10 +191,10 @@ mod tests {
 
     #[test]
     fn double_list_iterator() -> Result<(), String> {
-        let karta_file = KartaFile::new(String::from("[[1, 2, 3], [4, 5, 6], [7, 8, 9]]"))?;
+        let karta_file = KartaFile::new("test = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]")?;
 
         let mut counter: i64 = 1;
-        for elem in karta_file.query() {
+        for elem in karta_file.query().get_atom("test") {
             for elem2 in elem {
                 assert_eq!(counter, elem2.as_int::<i64>()?);
                 counter += 1;

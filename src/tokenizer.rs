@@ -1,59 +1,3 @@
-#[derive(PartialEq, Clone, Copy, Debug)]
-/// Represents the various kinds a token can be
-pub(crate) enum TokenKind {
-    LeftBrace,
-    RightBrace,
-    LeftSquare,
-    RightSquare,
-    Atom,
-    Integer,
-    Float,
-    Char,
-    String,
-    Identifier,
-    Comma,
-    Assign,
-    EndOfFile,
-}
-
-impl TokenKind {
-    /// Get the token kind from a string representation
-    fn from_string(str: &str) -> Self {
-        assert!(str.len() > 0);
-        match str {
-            "{" => TokenKind::LeftBrace,
-            "}" => TokenKind::RightBrace,
-            "[" => TokenKind::LeftSquare,
-            "]" => TokenKind::RightSquare,
-            "," => TokenKind::Comma,
-            "=" => TokenKind::Assign,
-            _ if str.chars().nth(0).unwrap() == '.' => TokenKind::Atom,
-            _ if str.chars().nth(0).unwrap().is_digit(10) => TokenKind::Integer,
-            _ => TokenKind::Identifier,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-/// Represents a position in a text file
-pub(crate) struct Span {
-    /// Line number of the file, starts at 1
-    pub(crate) line: usize,
-    /// Column number of the file, starts at 1
-    pub(crate) col: usize,
-}
-
-#[derive(Clone, Debug)]
-/// Represents a single piece of text in the file
-pub(crate) struct Token {
-    /// Owning string representing the actual text data for this string
-    pub(crate) data: String, // TODO: Should figure out how to just use `&'a str` here
-    /// What kind of token this is
-    pub(crate) kind: TokenKind,
-    /// Where in the file this token came from
-    pub(crate) span: Span,
-}
-
 /// Converts file contents text into a stream of tokens
 pub(crate) struct Tokenizer {
     /// Where in the file the tokenizer is currently working
@@ -150,10 +94,7 @@ impl Tokenizer {
 
                 // Symbols end at the end of the file, or if the next token isn't recognized
                 TokenizerState::Symbol
-                    if self.eof()
-                        || TokenKind::from_string(
-                            &self.file_contents[self.starting_cursor..self.cursor + 1],
-                        ) == TokenKind::Identifier =>
+                    if self.eof() || self.first_char_is_singular() || char.is_whitespace() =>
                 {
                     let token_data = &self.file_contents[self.starting_cursor..self.cursor];
                     let token_kind = TokenKind::from_string(token_data);
@@ -181,6 +122,21 @@ impl Tokenizer {
         self.add_token(TokenKind::EndOfFile, tokens);
 
         Ok(())
+    }
+
+    fn first_char_is_singular(&self) -> bool {
+        const SINGULAR_CHARS: [char; 6] = ['[', ']', '(', ')', '{', '}'];
+        for c in SINGULAR_CHARS {
+            if c == self
+                .file_contents
+                .chars()
+                .nth(self.starting_cursor)
+                .unwrap()
+            {
+                return true;
+            }
+        }
+        false
     }
 
     /// Whether or not the tokenizer is at the end of the file
@@ -211,6 +167,62 @@ impl Tokenizer {
         self.starting_cursor = self.cursor;
         self.state = TokenizerState::None;
     }
+}
+
+#[derive(PartialEq, Clone, Copy, Debug)]
+/// Represents the various kinds a token can be
+pub(crate) enum TokenKind {
+    LeftBrace,
+    RightBrace,
+    LeftSquare,
+    RightSquare,
+    Atom,
+    Integer,
+    Float,
+    Char,
+    String,
+    Identifier,
+    Comma,
+    Assign,
+    EndOfFile,
+}
+
+impl TokenKind {
+    /// Get the token kind from a string representation
+    fn from_string(str: &str) -> Self {
+        assert!(str.len() > 0);
+        match str {
+            "{" => TokenKind::LeftBrace,
+            "}" => TokenKind::RightBrace,
+            "[" => TokenKind::LeftSquare,
+            "]" => TokenKind::RightSquare,
+            "," => TokenKind::Comma,
+            "=" => TokenKind::Assign,
+            _ if str.chars().nth(0).unwrap() == '.' => TokenKind::Atom,
+            _ if str.chars().nth(0).unwrap().is_digit(10) => TokenKind::Integer,
+            _ => TokenKind::Identifier,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+/// Represents a position in a text file
+pub(crate) struct Span {
+    /// Line number of the file, starts at 1
+    pub(crate) line: usize,
+    /// Column number of the file, starts at 1
+    pub(crate) col: usize,
+}
+
+#[derive(Clone, Debug)]
+/// Represents a single piece of text in the file
+pub(crate) struct Token {
+    /// Owning string representing the actual text data for this string
+    pub(crate) data: String, // TODO: Should figure out how to just use `&'a str` here
+    /// What kind of token this is
+    pub(crate) kind: TokenKind,
+    /// Where in the file this token came from
+    pub(crate) span: Span,
 }
 
 #[derive(Clone, Copy)]

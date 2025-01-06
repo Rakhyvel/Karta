@@ -44,14 +44,14 @@ my-tuple' = {
   2 = 3,
 }
 
-;; Conceptually, the two are equivalent.
+;; Conceptually, the following map and function are equivalent:
 square = {
   0 = 0,
   1 = 1,
   2 = 4,
   3 = 9,
   ;; ...
-  ;; Karta doesn't support infinite maps, but just imagine this map is really huge
+  ;; Karta doesn't support infinite maps, but just imagine this map is really huge and maps all integers
 }
 square' x = x * x
 
