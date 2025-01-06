@@ -6,8 +6,9 @@ use crate::atom::{AtomId, AtomMap};
 pub(crate) struct AstHeap {
     asts: Vec<Ast>,
 
-    nil_id: AstId,
-    empty_map_id: AstId,
+    pub(crate) nil_id: AstId,
+    pub(crate) truthy_id: AstId,
+    pub(crate) empty_map_id: AstId,
 }
 
 impl AstHeap {
@@ -16,11 +17,15 @@ impl AstHeap {
         let mut retval = Self {
             asts: vec![],
             nil_id: AstId::new(0),
-            empty_map_id: AstId::new(1),
+            truthy_id: AstId::new(0),
+            empty_map_id: AstId::new(0),
         };
 
         let nil_atom_id = atoms.put_atoms_in_set(".nil");
         retval.nil_id = retval.create_atom(nil_atom_id);
+
+        let truthy_id = atoms.put_atoms_in_set(".t");
+        retval.nil_id = retval.create_atom(truthy_id);
 
         let empty_map = HashMap::new();
         retval.empty_map_id = retval.create_map(empty_map);
@@ -65,13 +70,64 @@ impl AstHeap {
         self.insert(Ast::Map(value))
     }
 
-    /// Returns the AstId of the nil atom
-    pub(crate) fn nil_atom(&self) -> AstId {
-        self.nil_id // TODO: This should be created when the heap is created, and the id stored
+    pub(crate) fn create_and(&mut self, lhs: AstId, rhs: AstId) -> AstId {
+        self.insert(Ast::And(lhs, rhs))
     }
 
-    pub(crate) fn empty_map(&self) -> AstId {
-        self.empty_map_id
+    pub(crate) fn create_or(&mut self, lhs: AstId, rhs: AstId) -> AstId {
+        self.insert(Ast::Or(lhs, rhs))
+    }
+
+    pub(crate) fn create_equals(&mut self, lhs: AstId, rhs: AstId) -> AstId {
+        self.insert(Ast::Equals(lhs, rhs))
+    }
+
+    pub(crate) fn create_not_equals(&mut self, lhs: AstId, rhs: AstId) -> AstId {
+        self.insert(Ast::NotEquals(lhs, rhs))
+    }
+
+    pub(crate) fn create_greater(&mut self, lhs: AstId, rhs: AstId) -> AstId {
+        self.insert(Ast::Greater(lhs, rhs))
+    }
+
+    pub(crate) fn create_lesser(&mut self, lhs: AstId, rhs: AstId) -> AstId {
+        self.insert(Ast::Lesser(lhs, rhs))
+    }
+
+    pub(crate) fn create_greater_equal(&mut self, lhs: AstId, rhs: AstId) -> AstId {
+        self.insert(Ast::GreaterEqual(lhs, rhs))
+    }
+
+    pub(crate) fn create_lesser_equal(&mut self, lhs: AstId, rhs: AstId) -> AstId {
+        self.insert(Ast::LesserEqual(lhs, rhs))
+    }
+
+    pub(crate) fn create_add(&mut self, lhs: AstId, rhs: AstId) -> AstId {
+        self.insert(Ast::Add(lhs, rhs))
+    }
+
+    pub(crate) fn create_subtract(&mut self, lhs: AstId, rhs: AstId) -> AstId {
+        self.insert(Ast::Subtract(lhs, rhs))
+    }
+
+    pub(crate) fn create_multiply(&mut self, lhs: AstId, rhs: AstId) -> AstId {
+        self.insert(Ast::Multiply(lhs, rhs))
+    }
+
+    pub(crate) fn create_divide(&mut self, lhs: AstId, rhs: AstId) -> AstId {
+        self.insert(Ast::Divide(lhs, rhs))
+    }
+
+    pub(crate) fn create_modulus(&mut self, lhs: AstId, rhs: AstId) -> AstId {
+        self.insert(Ast::Modulus(lhs, rhs))
+    }
+
+    pub(crate) fn create_neg(&mut self, expr: AstId) -> AstId {
+        self.insert(Ast::Negate(expr))
+    }
+
+    pub(crate) fn create_not(&mut self, expr: AstId) -> AstId {
+        self.insert(Ast::Not(expr))
     }
 
     /// Creates a linked-list node out of a map Ast
@@ -83,7 +139,7 @@ impl AstHeap {
     ) -> AstId {
         let mut fields: HashMap<AtomId, AstId> = HashMap::new();
         fields.insert(head_atom, head);
-        fields.insert(tail_atom, self.empty_map());
+        fields.insert(tail_atom, self.empty_map_id);
         self.create_map(fields)
     }
 
@@ -120,7 +176,7 @@ impl Display for AstId {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 /// Represents an expression in the Karta file
 pub(crate) enum Ast {
     /// A basic integer
@@ -135,4 +191,24 @@ pub(crate) enum Ast {
     Atom(AtomId),
     /// Maps AtomId's to an Ast within the file
     Map(HashMap<AtomId, AstId>),
+
+    And(AstId, AstId),
+    Or(AstId, AstId),
+
+    Equals(AstId, AstId),
+    NotEquals(AstId, AstId),
+    Greater(AstId, AstId),
+    Lesser(AstId, AstId),
+    GreaterEqual(AstId, AstId),
+    LesserEqual(AstId, AstId),
+
+    Add(AstId, AstId),
+    Subtract(AstId, AstId),
+
+    Multiply(AstId, AstId),
+    Divide(AstId, AstId),
+    Modulus(AstId, AstId),
+
+    Not(AstId),
+    Negate(AstId),
 }

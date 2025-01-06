@@ -169,6 +169,31 @@ impl Tokenizer {
     }
 }
 
+#[derive(Clone, Copy)]
+/// States that the tokenizer can be in
+enum TokenizerState {
+    None,
+    Whitespace,
+    Integer,
+    Atom,
+    Char,
+    String,
+    Symbol,
+    Float,
+    Comment,
+}
+
+#[derive(Clone, Debug)]
+/// Represents a single piece of text in the file
+pub(crate) struct Token {
+    /// Owning string representing the actual text data for this string
+    pub(crate) data: String, // TODO: Should figure out how to just use `&'a str` here.
+    /// What kind of token this is
+    pub(crate) kind: TokenKind,
+    /// Where in the file this token came from
+    pub(crate) span: Span,
+}
+
 #[derive(PartialEq, Clone, Copy, Debug)]
 /// Represents the various kinds a token can be
 pub(crate) enum TokenKind {
@@ -176,6 +201,8 @@ pub(crate) enum TokenKind {
     RightBrace,
     LeftSquare,
     RightSquare,
+    LeftParen,
+    RightParen,
     Atom,
     Integer,
     Float,
@@ -184,6 +211,21 @@ pub(crate) enum TokenKind {
     Identifier,
     Comma,
     Assign,
+    And,
+    Or,
+    Equals,
+    NotEquals,
+    Greater,
+    Lesser,
+    GreaterEqual,
+    LesserEqual,
+    Plus,
+    Minus,
+    Star,
+    Slash,
+    Percent,
+    Not,
+    Neg,
     EndOfFile,
 }
 
@@ -196,8 +238,25 @@ impl TokenKind {
             "}" => TokenKind::RightBrace,
             "[" => TokenKind::LeftSquare,
             "]" => TokenKind::RightSquare,
+            "(" => TokenKind::LeftParen,
+            ")" => TokenKind::RightParen,
             "," => TokenKind::Comma,
             "=" => TokenKind::Assign,
+            "&&" => TokenKind::And,
+            "||" => TokenKind::Or,
+            "==" => TokenKind::Equals,
+            "!=" => TokenKind::NotEquals,
+            ">" => TokenKind::Greater,
+            "<" => TokenKind::Lesser,
+            ">=" => TokenKind::GreaterEqual,
+            "<=" => TokenKind::LesserEqual,
+            "+" => TokenKind::Plus,
+            "-" => TokenKind::Minus,
+            "*" => TokenKind::Star,
+            "/" => TokenKind::Slash,
+            "%" => TokenKind::Percent,
+            "not" => TokenKind::Not,
+            "neg" => TokenKind::Neg,
             _ if str.chars().nth(0).unwrap() == '.' => TokenKind::Atom,
             _ if str.chars().nth(0).unwrap().is_digit(10) => TokenKind::Integer,
             _ => TokenKind::Identifier,
@@ -212,29 +271,4 @@ pub(crate) struct Span {
     pub(crate) line: usize,
     /// Column number of the file, starts at 1
     pub(crate) col: usize,
-}
-
-#[derive(Clone, Debug)]
-/// Represents a single piece of text in the file
-pub(crate) struct Token {
-    /// Owning string representing the actual text data for this string
-    pub(crate) data: String, // TODO: Should figure out how to just use `&'a str` here
-    /// What kind of token this is
-    pub(crate) kind: TokenKind,
-    /// Where in the file this token came from
-    pub(crate) span: Span,
-}
-
-#[derive(Clone, Copy)]
-/// States that the tokenizer can be in
-enum TokenizerState {
-    None,
-    Whitespace,
-    Integer,
-    Atom,
-    Char,
-    String,
-    Symbol,
-    Float,
-    Comment,
 }

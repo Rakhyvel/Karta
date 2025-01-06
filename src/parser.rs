@@ -37,7 +37,7 @@ impl Parser {
         while !self.eos() {
             let identifier = self.expect(TokenKind::Identifier)?.clone();
             let _ = self.expect(TokenKind::Assign)?;
-            let value = self.parse_expression(ast_heap, atoms)?;
+            let value = self.boolean_expr(ast_heap, atoms)?;
 
             // TODO: Expect newline token, add newline tokens, and probably layout once I add parens
 
@@ -93,12 +93,145 @@ impl Parser {
         self.accept(kind).ok_or(err)
     }
 
-    /// Parses an expression
-    fn parse_expression(
+    fn boolean_expr(
         &mut self,
         ast_heap: &mut AstHeap,
         atoms: &mut AtomMap,
     ) -> Result<AstId, String> {
+        let mut expr = self.comparison_expr(ast_heap, atoms)?;
+        loop {
+            match self.peek().kind {
+                TokenKind::And => {
+                    let _ = self.pop();
+                    let rhs = self.comparison_expr(ast_heap, atoms)?;
+                    expr = ast_heap.create_and(expr, rhs);
+                }
+                TokenKind::Or => {
+                    let _ = self.pop();
+                    let rhs = self.comparison_expr(ast_heap, atoms)?;
+                    expr = ast_heap.create_or(expr, rhs);
+                }
+                _ => return Ok(expr),
+            }
+        }
+    }
+
+    fn comparison_expr(
+        &mut self,
+        ast_heap: &mut AstHeap,
+        atoms: &mut AtomMap,
+    ) -> Result<AstId, String> {
+        let mut expr = self.additive_expr(ast_heap, atoms)?;
+        loop {
+            match self.peek().kind {
+                TokenKind::Equals => {
+                    let _ = self.pop();
+                    let rhs = self.additive_expr(ast_heap, atoms)?;
+                    expr = ast_heap.create_equals(expr, rhs);
+                }
+                TokenKind::NotEquals => {
+                    let _ = self.pop();
+                    let rhs = self.additive_expr(ast_heap, atoms)?;
+                    expr = ast_heap.create_not_equals(expr, rhs);
+                }
+                TokenKind::Greater => {
+                    let _ = self.pop();
+                    let rhs = self.additive_expr(ast_heap, atoms)?;
+                    expr = ast_heap.create_greater(expr, rhs);
+                }
+                TokenKind::Lesser => {
+                    let _ = self.pop();
+                    let rhs = self.additive_expr(ast_heap, atoms)?;
+                    expr = ast_heap.create_lesser(expr, rhs);
+                }
+                TokenKind::GreaterEqual => {
+                    let _ = self.pop();
+                    let rhs = self.additive_expr(ast_heap, atoms)?;
+                    expr = ast_heap.create_greater_equal(expr, rhs);
+                }
+                TokenKind::LesserEqual => {
+                    let _ = self.pop();
+                    let rhs = self.additive_expr(ast_heap, atoms)?;
+                    expr = ast_heap.create_lesser_equal(expr, rhs);
+                }
+                _ => return Ok(expr),
+            }
+        }
+    }
+
+    fn additive_expr(
+        &mut self,
+        ast_heap: &mut AstHeap,
+        atoms: &mut AtomMap,
+    ) -> Result<AstId, String> {
+        let mut expr = self.multiplicative_expr(ast_heap, atoms)?;
+        loop {
+            match self.peek().kind {
+                TokenKind::Plus => {
+                    let _ = self.pop();
+                    let rhs = self.multiplicative_expr(ast_heap, atoms)?;
+                    expr = ast_heap.create_add(expr, rhs);
+                }
+                TokenKind::Minus => {
+                    let _ = self.pop();
+                    let rhs = self.multiplicative_expr(ast_heap, atoms)?;
+                    expr = ast_heap.create_subtract(expr, rhs);
+                }
+                _ => return Ok(expr),
+            }
+        }
+    }
+
+    fn multiplicative_expr(
+        &mut self,
+        ast_heap: &mut AstHeap,
+        atoms: &mut AtomMap,
+    ) -> Result<AstId, String> {
+        let mut expr = self.prefix_expr(ast_heap, atoms)?;
+        loop {
+            match self.peek().kind {
+                TokenKind::Star => {
+                    let _ = self.pop();
+                    let rhs = self.prefix_expr(ast_heap, atoms)?;
+                    expr = ast_heap.create_multiply(expr, rhs);
+                }
+                TokenKind::Slash => {
+                    let _ = self.pop();
+                    let rhs = self.prefix_expr(ast_heap, atoms)?;
+                    expr = ast_heap.create_divide(expr, rhs);
+                }
+                TokenKind::Percent => {
+                    let _ = self.pop();
+                    let rhs = self.prefix_expr(ast_heap, atoms)?;
+                    expr = ast_heap.create_modulus(expr, rhs);
+                }
+                _ => return Ok(expr),
+            }
+        }
+    }
+
+    fn prefix_expr(
+        &mut self,
+        ast_heap: &mut AstHeap,
+        atoms: &mut AtomMap,
+    ) -> Result<AstId, String> {
+        match self.peek().kind {
+            TokenKind::Not => {
+                let _ = self.pop();
+                let expr = self.boolean_expr(ast_heap, atoms)?;
+                Ok(ast_heap.create_not(expr))
+            }
+            TokenKind::Neg => {
+                let _ = self.pop();
+                let expr = self.boolean_expr(ast_heap, atoms)?;
+                Ok(ast_heap.create_neg(expr))
+            }
+            _ => self.expr(ast_heap, atoms),
+        }
+    }
+
+    /// Parses an expression
+    fn expr(&mut self, ast_heap: &mut AstHeap, atoms: &mut AtomMap) -> Result<AstId, String> {
         if let Some(token) = self.accept(TokenKind::Integer) {
             Ok(ast_heap.create_int(token.data.parse::<i64>().unwrap()))
         } else if let Some(token) = self.accept(TokenKind::Float) {
@@ -114,13 +247,13 @@ impl Parser {
         } else if let Some(_token) = self.accept(TokenKind::LeftBrace) {
             let mut children: HashMap<AtomId, AstId> = HashMap::new();
             loop {
-                let key_ast_id = self.parse_expression(ast_heap, atoms)?;
+                let key_ast_id = self.boolean_expr(ast_heap, atoms)?;
                 let key = match *ast_heap.get(key_ast_id).unwrap() {
                     Ast::Atom(s) => s,
                     _ => return Err(String::from("bad!")),
                 };
                 let _ = self.expect(TokenKind::Assign)?;
-                let value = self.parse_expression(ast_heap, atoms)?;
+                let value = self.boolean_expr(ast_heap, atoms)?;
 
                 children.insert(key, value);
 
@@ -136,13 +269,13 @@ impl Parser {
             let tail_atom = atoms.put_atoms_in_set(".tail");
 
             if self.accept(TokenKind::RightSquare).is_some() {
-                Ok(ast_heap.nil_atom())
+                Ok(ast_heap.nil_id)
             } else {
-                let head = self.parse_expression(ast_heap, atoms)?;
+                let head = self.boolean_expr(ast_heap, atoms)?;
                 let retval = ast_heap.make_list_node(head_atom, head, tail_atom);
                 let mut curr_id = retval;
                 while self.accept(TokenKind::Comma).is_some() {
-                    let head = self.parse_expression(ast_heap, atoms)?;
+                    let head = self.boolean_expr(ast_heap, atoms)?;
                     let new_map_id = ast_heap.make_list_node(head_atom, head, tail_atom);
                     let curr_map = if let Ast::Map(map) = ast_heap.get_mut(curr_id).unwrap() {
                         map
@@ -155,6 +288,10 @@ impl Parser {
                 let _ = self.expect(TokenKind::RightSquare)?;
                 Ok(retval)
             }
+        } else if let Some(_token) = self.accept(TokenKind::LeftParen) {
+            let retval = self.boolean_expr(ast_heap, atoms)?;
+            let _ = self.expect(TokenKind::RightParen)?;
+            Ok(retval)
         } else {
             Err(self.parse_error(
                 String::from("an expression"),

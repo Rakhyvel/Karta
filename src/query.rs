@@ -23,7 +23,7 @@ impl<'a> KartaQuery<'a> {
 
     /// Return a new query with it's result being the result of applying the atom to the current result.
     /// The result becomes an error if applied to a non-map, or if the previous result was errant.
-    pub fn get_atom(mut self, field: &str) -> Self {
+    pub fn get(mut self, field: &str) -> Self {
         let current_result = match self.current_result {
             Ok(x) => x,
             Err(_) => return self,
@@ -177,8 +177,8 @@ impl<'a> Iterator for KartaListIterator<'a> {
         if self.query.is_empty_map().unwrap() {
             None
         } else {
-            let head = self.query.clone().get_atom(".head");
-            let tail = self.query.clone().get_atom(".tail");
+            let head = self.query.clone().get(".head");
+            let tail = self.query.clone().get(".tail");
             self.query = tail;
             Some(head)
         }
