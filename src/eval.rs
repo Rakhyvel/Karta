@@ -69,6 +69,7 @@ impl AstHeap {
         match self.binop_get(asts)? {
             (Ast::Int(x), Ast::Int(y)) => Ok(self.create_boolean(x == y)),
             (Ast::Float(x), Ast::Float(y)) => Ok(self.create_boolean(x == y)),
+            (Ast::Atom(x), Ast::Atom(y)) => Ok(self.create_boolean(x == y)),
             (lhs, rhs) => Err(format!("cannot compare {:?} and {:?}", lhs, rhs)),
         }
     }
@@ -83,6 +84,7 @@ impl AstHeap {
         match self.binop_get(asts)? {
             (Ast::Int(x), Ast::Int(y)) => Ok(self.create_boolean(x != y)),
             (Ast::Float(x), Ast::Float(y)) => Ok(self.create_boolean(x != y)),
+            (Ast::Atom(x), Ast::Atom(y)) => Ok(self.create_boolean(x != y)),
             (lhs, rhs) => Err(format!("cannot compare {:?} and {:?}", lhs, rhs)),
         }
     }
