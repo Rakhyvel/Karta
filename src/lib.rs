@@ -21,12 +21,12 @@
 //!     - ()
 //! - [x] ! Add `let` ... `in`
 //! - [ ] ! map get, unions, intersection, difference
+//! - [ ] ! if then else, layout blocks
 //! - [ ] ! imports
 //! - [ ] ! Add functions with only one argument
 //! - [ ] ! Add functions with multiple arguments
 //! - [ ] ! tuples
 //! - [ ] ! String interpolation
-//! - [ ] ! if then else
 //! - [ ] Implement REPL
 //! - [ ] Add `where`
 //! - [ ] Sets
@@ -45,6 +45,7 @@
 pub mod ast;
 mod atom;
 mod eval;
+mod layout;
 mod parser;
 pub mod query;
 mod scope;
@@ -246,6 +247,23 @@ mod tests {
         let res: i64 = karta_file.eval("test")?.as_int()?;
 
         assert_eq!(res, 4);
+
+        Ok(())
+    }
+
+    #[test]
+    fn let_in_multiple_lines() -> Result<(), String> {
+        let karta_file = KartaFile::new(
+            r#"test = let
+  x = 4
+  y = 5
+in x + y
+"#,
+        )?;
+
+        let res: i64 = karta_file.eval("test")?.as_int()?;
+
+        assert_eq!(res, 9);
 
         Ok(())
     }

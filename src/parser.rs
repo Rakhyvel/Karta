@@ -6,6 +6,7 @@ use std::{
 use crate::{
     ast::{Ast, AstHeap, AstId},
     atom::{AtomId, AtomMap},
+    layout,
     scope::Scope,
     tokenizer::{Token, TokenKind, Tokenizer},
 };
@@ -33,8 +34,7 @@ impl Parser {
         atoms: &mut AtomMap,
         scope: &Arc<Mutex<Scope>>,
     ) -> Result<(), String> {
-        let mut tokenizer = Tokenizer::new(file_contents);
-        let _ = tokenizer.tokenize(&mut self.tokens).unwrap();
+        self.get_tokens(file_contents);
 
         self.parse_bindings(TokenKind::EndOfFile, ast_heap, atoms, scope)?;
 
@@ -48,12 +48,19 @@ impl Parser {
         atoms: &mut AtomMap,
         scope: &Arc<Mutex<Scope>>,
     ) -> Result<AstId, String> {
-        let mut tokenizer = Tokenizer::new(file_contents);
-        let _ = tokenizer.tokenize(&mut self.tokens).unwrap();
-
-        println!("{:?}", self.tokens);
+        self.get_tokens(file_contents);
 
         self.let_in_expr(ast_heap, atoms, scope)
+    }
+
+    fn get_tokens(&mut self, file_contents: String) {
+        let mut tokenizer = Tokenizer::new(file_contents);
+        let _ = tokenizer.tokenize(&mut self.tokens).unwrap();
+        layout::layout(&mut self.tokens);
+
+        for token in &self.tokens {
+            println!("{:?}({}) ", token.kind, token.data)
+        }
     }
 
     /// Returns the token at the begining of the stream without removing it
@@ -111,7 +118,7 @@ impl Parser {
             let _ = self.expect(TokenKind::Assign)?;
             let value = self.let_in_expr(ast_heap, atoms, scope)?;
 
-            // TODO: Expect newline token, add newline tokens, and probably layout once I add parens
+            let _ = self.accept(TokenKind::Newline);
 
             let key = atoms.put_atoms_in_set(&identifier.data);
 
@@ -132,7 +139,10 @@ impl Parser {
             TokenKind::Let => {
                 let _ = self.pop();
                 let new_scope = Scope::new(Some(scope.clone()));
-                self.parse_bindings(TokenKind::In, ast_heap, atoms, &new_scope)?;
+                let _ = self.expect(TokenKind::Indent)?;
+                self.parse_bindings(TokenKind::Dedent, ast_heap, atoms, &new_scope)?;
+                let _ = self.expect(TokenKind::Dedent)?;
+                let _ = self.accept(TokenKind::Newline);
                 let _ = self.expect(TokenKind::In)?;
                 let expr = self.boolean_expr(ast_heap, atoms, scope)?;
                 Ok(ast_heap.create_let(new_scope, expr))

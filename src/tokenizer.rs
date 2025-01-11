@@ -47,13 +47,32 @@ impl Tokenizer {
 
                 // Whitespace state ends when the next char isn't whitespace
                 TokenizerState::Whitespace if self.eof() || !char.is_whitespace() => {
+                    // If token doesn't contain a newline, just ignore it
+                    // If it does, the data is from the newline all the way to the end
+
+                    let token_data = &self.file_contents[self.starting_cursor..self.cursor];
+                    if let Some(last_newline) = token_data.rfind('\n') {
+                        let token_data = String::from(
+                            &self.file_contents[(self.starting_cursor + last_newline)..self.cursor],
+                        );
+                        let token = Token {
+                            data: token_data,
+                            kind: TokenKind::Newline,
+                            span: Span {
+                                col: self.col - 1,
+                                line: self.line,
+                            },
+                        };
+                        tokens.push(token);
+                    }
+
                     self.starting_cursor = self.cursor;
                     self.state = TokenizerState::None
                 }
                 TokenizerState::Whitespace => {
                     if char == '\n' {
                         self.line += 1;
-                        self.col = 1;
+                        self.col = 0;
                     }
                     self.advance(TokenizerState::Whitespace);
                 }
@@ -198,6 +217,7 @@ pub(crate) struct Token {
 #[derive(PartialEq, Clone, Copy, Debug)]
 /// Represents the various kinds a token can be
 pub(crate) enum TokenKind {
+    Newline,
     LeftBrace,
     RightBrace,
     LeftSquare,
@@ -229,6 +249,8 @@ pub(crate) enum TokenKind {
     Neg,
     Let,
     In,
+    Dedent,
+    Indent,
     EndOfFile,
 }
 
