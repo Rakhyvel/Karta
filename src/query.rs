@@ -14,10 +14,10 @@ pub struct KartaQuery<'a> {
 
 impl<'a> KartaQuery<'a> {
     /// Create a new query with a Karta file and current result set as the file's root.
-    pub(crate) fn new(file: &'a KartaFile) -> Self {
+    pub(crate) fn new(file: &'a KartaFile, current_result: AstId) -> Self {
         Self {
             file,
-            current_result: Ok(file.root),
+            current_result: Ok(current_result),
         }
     }
 
@@ -29,13 +29,14 @@ impl<'a> KartaQuery<'a> {
             Err(_) => return self,
         };
 
-        let root_ast = self
-            .file
-            .ast_heap()
+        let ast_heap = self.file.ast_heap();
+        let atoms = self.file.atoms();
+
+        let root_ast = ast_heap
             .get(current_result)
             .expect("couldn't get Ast for AstId");
 
-        let field_atom_id = match self.file.atoms().get(field) {
+        let field_atom_id = match atoms.get(field) {
             Some(x) => x,
             None => {
                 self.current_result = Ok(AstId::new(0));
@@ -57,10 +58,10 @@ impl<'a> KartaQuery<'a> {
     where
         T: From<i64>,
     {
+        let ast_heap = self.file.ast_heap();
+
         if let Ok(current_result) = self.current_result {
-            let ast = self
-                .file
-                .ast_heap()
+            let ast = ast_heap
                 .get(current_result)
                 .expect("couldn't get Ast for AstId");
             match ast {
@@ -80,10 +81,10 @@ impl<'a> KartaQuery<'a> {
     where
         T: From<f64>,
     {
+        let ast_heap = self.file.ast_heap();
+
         if let Ok(current_result) = self.current_result {
-            let ast = self
-                .file
-                .ast_heap()
+            let ast = ast_heap
                 .get(current_result)
                 .expect("couldn't get Ast for AstId");
             match ast {
@@ -99,15 +100,14 @@ impl<'a> KartaQuery<'a> {
 
     /// Interpret the current result of this query as a string.
     /// Returns an error if the query result cannot be converted to a string, or if any errors occured during the query process.
-    pub fn as_string(&self) -> Result<&str, String> {
+    pub fn as_string(&self) -> Result<String, String> {
+        let ast_heap = self.file.ast_heap();
         if let Ok(current_result) = self.current_result {
-            let ast = self
-                .file
-                .ast_heap()
+            let ast = ast_heap
                 .get(current_result)
                 .expect("couldn't get Ast for AstId");
             match ast {
-                Ast::String(x) => Ok((*x).as_str()),
+                Ast::String(x) => Ok(x.clone()),
                 _ => Err(format!("cannot convert {:?} to string", ast)),
             }
         } else {
@@ -118,10 +118,10 @@ impl<'a> KartaQuery<'a> {
     /// Whether or not the current result of this query is truthy (ie not the .nil atom).
     /// Propagates any errors that may have occured during the query process.
     pub fn truthy(&self) -> Result<bool, String> {
+        let ast_heap = self.file.ast_heap();
+
         if let Ok(current_result) = self.current_result {
-            let ast = self
-                .file
-                .ast_heap()
+            let ast = ast_heap
                 .get(current_result)
                 .expect("couldn't get Ast for AstId");
             match ast {
@@ -140,10 +140,10 @@ impl<'a> KartaQuery<'a> {
     }
 
     fn is_empty_map(&self) -> Result<bool, String> {
+        let ast_heap = self.file.ast_heap();
+
         if let Ok(current_result) = self.current_result {
-            let ast = self
-                .file
-                .ast_heap()
+            let ast = ast_heap
                 .get(current_result)
                 .expect("couldn't get Ast for AstId");
             match ast {

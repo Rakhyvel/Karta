@@ -16,7 +16,8 @@ pub(crate) struct Tokenizer {
 
 impl Tokenizer {
     /// Create a new tokenizer, taking ownership of the file contents string
-    pub(crate) fn new(file_contents: String) -> Self {
+    pub(crate) fn new(mut file_contents: String) -> Self {
+        file_contents.push('\n'); // This is required to make the tokenizer happy
         Self {
             cursor: 0,
             file_contents,
@@ -226,6 +227,8 @@ pub(crate) enum TokenKind {
     Percent,
     Not,
     Neg,
+    Let,
+    In,
     EndOfFile,
 }
 
@@ -257,6 +260,8 @@ impl TokenKind {
             "%" => TokenKind::Percent,
             "not" => TokenKind::Not,
             "neg" => TokenKind::Neg,
+            "let" => TokenKind::Let,
+            "in" => TokenKind::In,
             _ if str.chars().nth(0).unwrap() == '.' => TokenKind::Atom,
             _ if str.chars().nth(0).unwrap().is_digit(10) => TokenKind::Integer,
             _ => TokenKind::Identifier,

@@ -1,6 +1,13 @@
-use std::{collections::HashMap, fmt::Display};
+use std::{
+    collections::HashMap,
+    fmt::Display,
+    sync::{Arc, Mutex},
+};
 
-use crate::atom::{AtomId, AtomMap};
+use crate::{
+    atom::{AtomId, AtomMap},
+    scope::Scope,
+};
 
 /// Contains the ASTs used in a Karta file
 pub(crate) struct AstHeap {
@@ -130,6 +137,14 @@ impl AstHeap {
         self.insert(Ast::Not(expr))
     }
 
+    pub(crate) fn create_let(&mut self, scope: Arc<Mutex<Scope>>, expr: AstId) -> AstId {
+        self.insert(Ast::Let(scope, expr))
+    }
+
+    pub(crate) fn create_identifier(&mut self, identifier: AtomId) -> AstId {
+        self.insert(Ast::Identifier(identifier))
+    }
+
     /// Creates a linked-list node out of a map Ast
     pub(crate) fn make_list_node(
         &mut self,
@@ -211,4 +226,7 @@ pub(crate) enum Ast {
 
     Not(AstId),
     Negate(AstId),
+
+    Let(Arc<Mutex<Scope>>, AstId),
+    Identifier(AtomId),
 }
