@@ -20,6 +20,7 @@
 //!     - terms
 //!     - ()
 //! - [x] ! Add `let` ... `in`
+//! - [ ] ! Simplify operators to be prefix only!
 //! - [ ] ! map get, unions, intersection, difference
 //! - [ ] ! if then else, layout blocks
 //! - [ ] ! imports
@@ -220,22 +221,11 @@ mod tests {
 
     #[test]
     fn operators() -> Result<(), String> {
-        let karta_file = KartaFile::new("test = 3 + 5 * 4")?;
+        let karta_file = KartaFile::new("test = (* (+ 3 5) 4)")?;
 
         let res: i64 = karta_file.eval("test")?.as_int()?;
 
         assert_eq!(res, 23);
-
-        Ok(())
-    }
-
-    #[test]
-    fn parenthesis() -> Result<(), String> {
-        let karta_file = KartaFile::new("test = (3 + 5) * 4")?;
-
-        let res: i64 = karta_file.eval("test")?.as_int()?;
-
-        assert_eq!(res, 32);
 
         Ok(())
     }
@@ -257,7 +247,7 @@ mod tests {
             r#"test = let
   x = 4
   y = 5
-in x + y
+in + x y
 "#,
         )?;
 

@@ -31,22 +31,6 @@ impl AstHeap {
                 }
                 Ok(self.create_map(new_map))
             }
-
-            Ast::And(lhs_id, rhs_id) => self.and(lhs_id, rhs_id, scope, atoms),
-            Ast::Or(lhs_id, rhs_id) => self.or(lhs_id, rhs_id, scope, atoms),
-            Ast::Not(expr_id) => self.not(expr_id, scope, atoms),
-            Ast::Equals(lhs_id, rhs_id) => self.equal(lhs_id, rhs_id, scope, atoms),
-            Ast::NotEquals(lhs_id, rhs_id) => self.not_equal(lhs_id, rhs_id, scope, atoms),
-            Ast::Greater(lhs_id, rhs_id) => self.greater(lhs_id, rhs_id, scope, atoms),
-            Ast::Lesser(lhs_id, rhs_id) => self.lesser(lhs_id, rhs_id, scope, atoms),
-            Ast::GreaterEqual(lhs_id, rhs_id) => self.greater_equal(lhs_id, rhs_id, scope, atoms),
-            Ast::LesserEqual(lhs_id, rhs_id) => self.lesser_equal(lhs_id, rhs_id, scope, atoms),
-            Ast::Add(lhs_id, rhs_id) => self.add(lhs_id, rhs_id, scope, atoms),
-            Ast::Subtract(lhs_id, rhs_id) => self.subtract(lhs_id, rhs_id, scope, atoms),
-            Ast::Multiply(lhs_id, rhs_id) => self.multiply(lhs_id, rhs_id, scope, atoms),
-            Ast::Divide(lhs_id, rhs_id) => self.divide(lhs_id, rhs_id, scope, atoms),
-            Ast::Modulus(lhs_id, rhs_id) => self.modulus(lhs_id, rhs_id, scope, atoms),
-            Ast::Negate(expr_id) => self.negate(expr_id, scope, atoms),
             Ast::Let(new_scope, expr) => self.eval(expr, &new_scope, atoms),
             Ast::Identifier(id) => {
                 let mut curr_scope: Option<Arc<Mutex<Scope>>> = Some(scope.clone());
@@ -63,6 +47,7 @@ impl AstHeap {
                     }
                 }
             }
+            Ast::Apply(_, _) => todo!(),
         }
     }
 

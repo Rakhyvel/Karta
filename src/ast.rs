@@ -77,72 +77,16 @@ impl AstHeap {
         self.insert(Ast::Map(value))
     }
 
-    pub(crate) fn create_and(&mut self, lhs: AstId, rhs: AstId) -> AstId {
-        self.insert(Ast::And(lhs, rhs))
-    }
-
-    pub(crate) fn create_or(&mut self, lhs: AstId, rhs: AstId) -> AstId {
-        self.insert(Ast::Or(lhs, rhs))
-    }
-
-    pub(crate) fn create_equals(&mut self, lhs: AstId, rhs: AstId) -> AstId {
-        self.insert(Ast::Equals(lhs, rhs))
-    }
-
-    pub(crate) fn create_not_equals(&mut self, lhs: AstId, rhs: AstId) -> AstId {
-        self.insert(Ast::NotEquals(lhs, rhs))
-    }
-
-    pub(crate) fn create_greater(&mut self, lhs: AstId, rhs: AstId) -> AstId {
-        self.insert(Ast::Greater(lhs, rhs))
-    }
-
-    pub(crate) fn create_lesser(&mut self, lhs: AstId, rhs: AstId) -> AstId {
-        self.insert(Ast::Lesser(lhs, rhs))
-    }
-
-    pub(crate) fn create_greater_equal(&mut self, lhs: AstId, rhs: AstId) -> AstId {
-        self.insert(Ast::GreaterEqual(lhs, rhs))
-    }
-
-    pub(crate) fn create_lesser_equal(&mut self, lhs: AstId, rhs: AstId) -> AstId {
-        self.insert(Ast::LesserEqual(lhs, rhs))
-    }
-
-    pub(crate) fn create_add(&mut self, lhs: AstId, rhs: AstId) -> AstId {
-        self.insert(Ast::Add(lhs, rhs))
-    }
-
-    pub(crate) fn create_subtract(&mut self, lhs: AstId, rhs: AstId) -> AstId {
-        self.insert(Ast::Subtract(lhs, rhs))
-    }
-
-    pub(crate) fn create_multiply(&mut self, lhs: AstId, rhs: AstId) -> AstId {
-        self.insert(Ast::Multiply(lhs, rhs))
-    }
-
-    pub(crate) fn create_divide(&mut self, lhs: AstId, rhs: AstId) -> AstId {
-        self.insert(Ast::Divide(lhs, rhs))
-    }
-
-    pub(crate) fn create_modulus(&mut self, lhs: AstId, rhs: AstId) -> AstId {
-        self.insert(Ast::Modulus(lhs, rhs))
-    }
-
-    pub(crate) fn create_neg(&mut self, expr: AstId) -> AstId {
-        self.insert(Ast::Negate(expr))
-    }
-
-    pub(crate) fn create_not(&mut self, expr: AstId) -> AstId {
-        self.insert(Ast::Not(expr))
-    }
-
     pub(crate) fn create_let(&mut self, scope: Arc<Mutex<Scope>>, expr: AstId) -> AstId {
         self.insert(Ast::Let(scope, expr))
     }
 
     pub(crate) fn create_identifier(&mut self, identifier: AtomId) -> AstId {
         self.insert(Ast::Identifier(identifier))
+    }
+
+    pub(crate) fn create_apply(&mut self, lhs: AstId, rhs: AstId) -> AstId {
+        self.insert(Ast::Apply(lhs, rhs))
     }
 
     /// Creates a linked-list node out of a map Ast
@@ -207,26 +151,8 @@ pub(crate) enum Ast {
     /// Maps AtomId's to an Ast within the file
     Map(HashMap<AtomId, AstId>),
 
-    And(AstId, AstId),
-    Or(AstId, AstId),
-
-    Equals(AstId, AstId),
-    NotEquals(AstId, AstId),
-    Greater(AstId, AstId),
-    Lesser(AstId, AstId),
-    GreaterEqual(AstId, AstId),
-    LesserEqual(AstId, AstId),
-
-    Add(AstId, AstId),
-    Subtract(AstId, AstId),
-
-    Multiply(AstId, AstId),
-    Divide(AstId, AstId),
-    Modulus(AstId, AstId),
-
-    Not(AstId),
-    Negate(AstId),
-
     Let(Arc<Mutex<Scope>>, AstId),
     Identifier(AtomId),
+
+    Apply(AstId, AstId),
 }

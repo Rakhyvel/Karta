@@ -74,6 +74,18 @@ impl Parser {
         &self.tokens[self.cursor - 1]
     }
 
+    fn next_is_expr(&self) -> bool {
+        self.peek().kind == TokenKind::Integer
+            || self.peek().kind == TokenKind::Float
+            || self.peek().kind == TokenKind::Char
+            || self.peek().kind == TokenKind::String
+            || self.peek().kind == TokenKind::Atom
+            || self.peek().kind == TokenKind::Identifier
+            || self.peek().kind == TokenKind::LeftBrace
+            || self.peek().kind == TokenKind::LeftParen
+            || self.peek().kind == TokenKind::LeftSquare
+    }
+
     /// Returns whether or not the parser is at the end of the stream
     fn eos(&self) -> bool {
         self.cursor >= self.tokens.len() || self.peek().kind == TokenKind::EndOfFile
@@ -139,158 +151,34 @@ impl Parser {
             TokenKind::Let => {
                 let _ = self.pop();
                 let new_scope = Scope::new(Some(scope.clone()));
-                let _ = self.expect(TokenKind::Indent)?;
-                self.parse_bindings(TokenKind::Dedent, ast_heap, atoms, &new_scope)?;
-                let _ = self.expect(TokenKind::Dedent)?;
-                let _ = self.accept(TokenKind::Newline);
+                if self.peek().kind == TokenKind::Indent {
+                    let _ = self.expect(TokenKind::Indent)?;
+                    self.parse_bindings(TokenKind::Dedent, ast_heap, atoms, &new_scope)?;
+                    let _ = self.expect(TokenKind::Dedent)?;
+                    let _ = self.accept(TokenKind::Newline);
+                } else {
+                    self.parse_bindings(TokenKind::In, ast_heap, atoms, &new_scope)?;
+                }
                 let _ = self.expect(TokenKind::In)?;
-                let expr = self.boolean_expr(ast_heap, atoms, scope)?;
+                let expr = self.apply_expr(ast_heap, atoms, scope)?;
                 Ok(ast_heap.create_let(new_scope, expr))
             }
-            _ => self.boolean_expr(ast_heap, atoms, scope),
+            _ => self.apply_expr(ast_heap, atoms, scope),
         }
     }
 
-    fn boolean_expr(
+    fn apply_expr(
         &mut self,
         ast_heap: &mut AstHeap,
         atoms: &mut AtomMap,
         scope: &Arc<Mutex<Scope>>,
     ) -> Result<AstId, String> {
-        let mut expr = self.comparison_expr(ast_heap, atoms, scope)?;
-        loop {
-            match self.peek().kind {
-                TokenKind::And => {
-                    let _ = self.pop();
-                    let rhs = self.comparison_expr(ast_heap, atoms, scope)?;
-                    expr = ast_heap.create_and(expr, rhs);
-                }
-                TokenKind::Or => {
-                    let _ = self.pop();
-                    let rhs = self.comparison_expr(ast_heap, atoms, scope)?;
-                    expr = ast_heap.create_or(expr, rhs);
-                }
-                _ => return Ok(expr),
-            }
+        let mut expr = self.expr(ast_heap, atoms, scope)?;
+        while self.next_is_expr() {
+            let rhs = self.expr(ast_heap, atoms, scope)?;
+            expr = ast_heap.create_apply(expr, rhs);
         }
-    }
-
-    fn comparison_expr(
-        &mut self,
-        ast_heap: &mut AstHeap,
-        atoms: &mut AtomMap,
-        scope: &Arc<Mutex<Scope>>,
-    ) -> Result<AstId, String> {
-        let mut expr = self.additive_expr(ast_heap, atoms, scope)?;
-        loop {
-            match self.peek().kind {
-                TokenKind::Equals => {
-                    let _ = self.pop();
-                    let rhs = self.additive_expr(ast_heap, atoms, scope)?;
-                    expr = ast_heap.create_equals(expr, rhs);
-                }
-                TokenKind::NotEquals => {
-                    let _ = self.pop();
-                    let rhs = self.additive_expr(ast_heap, atoms, scope)?;
-                    expr = ast_heap.create_not_equals(expr, rhs);
-                }
-                TokenKind::Greater => {
-                    let _ = self.pop();
-                    let rhs = self.additive_expr(ast_heap, atoms, scope)?;
-                    expr = ast_heap.create_greater(expr, rhs);
-                }
-                TokenKind::Lesser => {
-                    let _ = self.pop();
-                    let rhs = self.additive_expr(ast_heap, atoms, scope)?;
-                    expr = ast_heap.create_lesser(expr, rhs);
-                }
-                TokenKind::GreaterEqual => {
-                    let _ = self.pop();
-                    let rhs = self.additive_expr(ast_heap, atoms, scope)?;
-                    expr = ast_heap.create_greater_equal(expr, rhs);
-                }
-                TokenKind::LesserEqual => {
-                    let _ = self.pop();
-                    let rhs = self.additive_expr(ast_heap, atoms, scope)?;
-                    expr = ast_heap.create_lesser_equal(expr, rhs);
-                }
-                _ => return Ok(expr),
-            }
-        }
-    }
-
-    fn additive_expr(
-        &mut self,
-        ast_heap: &mut AstHeap,
-        atoms: &mut AtomMap,
-        scope: &Arc<Mutex<Scope>>,
-    ) -> Result<AstId, String> {
-        let mut expr = self.multiplicative_expr(ast_heap, atoms, scope)?;
-        loop {
-            match self.peek().kind {
-                TokenKind::Plus => {
-                    let _ = self.pop();
-                    let rhs = self.multiplicative_expr(ast_heap, atoms, scope)?;
-                    expr = ast_heap.create_add(expr, rhs);
-                }
-                TokenKind::Minus => {
-                    let _ = self.pop();
-                    let rhs = self.multiplicative_expr(ast_heap, atoms, scope)?;
-                    expr = ast_heap.create_subtract(expr, rhs);
-                }
-                _ => return Ok(expr),
-            }
-        }
-    }
-
-    fn multiplicative_expr(
-        &mut self,
-        ast_heap: &mut AstHeap,
-        atoms: &mut AtomMap,
-        scope: &Arc<Mutex<Scope>>,
-    ) -> Result<AstId, String> {
-        let mut expr = self.prefix_expr(ast_heap, atoms, scope)?;
-        loop {
-            match self.peek().kind {
-                TokenKind::Star => {
-                    let _ = self.pop();
-                    let rhs = self.prefix_expr(ast_heap, atoms, scope)?;
-                    expr = ast_heap.create_multiply(expr, rhs);
-                }
-                TokenKind::Slash => {
-                    let _ = self.pop();
-                    let rhs = self.prefix_expr(ast_heap, atoms, scope)?;
-                    expr = ast_heap.create_divide(expr, rhs);
-                }
-                TokenKind::Percent => {
-                    let _ = self.pop();
-                    let rhs = self.prefix_expr(ast_heap, atoms, scope)?;
-                    expr = ast_heap.create_modulus(expr, rhs);
-                }
-                _ => return Ok(expr),
-            }
-        }
-    }
-
-    fn prefix_expr(
-        &mut self,
-        ast_heap: &mut AstHeap,
-        atoms: &mut AtomMap,
-        scope: &Arc<Mutex<Scope>>,
-    ) -> Result<AstId, String> {
-        match self.peek().kind {
-            TokenKind::Not => {
-                let _ = self.pop();
-                let expr = self.let_in_expr(ast_heap, atoms, scope)?;
-                Ok(ast_heap.create_not(expr))
-            }
-            TokenKind::Neg => {
-                let _ = self.pop();
-                let expr = self.let_in_expr(ast_heap, atoms, scope)?;
-                Ok(ast_heap.create_neg(expr))
-            }
-            _ => self.expr(ast_heap, atoms, scope),
-        }
+        Ok(expr)
     }
 
     /// Parses an expression
