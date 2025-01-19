@@ -9,6 +9,13 @@ use crate::{
     scope::Scope,
 };
 
+type EvalFn = for<'a, 'b, 'c> fn(
+    &'a mut AstHeap,
+    AstId,
+    &'b Arc<Mutex<Scope>>,
+    &'c AtomMap,
+) -> Result<AstId, String>;
+
 /// Contains the ASTs used in a Karta file
 pub(crate) struct AstHeap {
     asts: Vec<Ast>,
@@ -16,6 +23,8 @@ pub(crate) struct AstHeap {
     pub(crate) nil_id: AstId,
     pub(crate) truthy_id: AstId,
     pub(crate) empty_map_id: AstId,
+
+    pub(crate) builtin_function_methods: HashMap<String, EvalFn>,
 }
 
 impl AstHeap {
@@ -26,6 +35,23 @@ impl AstHeap {
             nil_id: AstId::new(0),
             truthy_id: AstId::new(0),
             empty_map_id: AstId::new(0),
+            builtin_function_methods: HashMap::from([
+                (String::from("@and"), AstHeap::and as EvalFn),
+                (String::from("@or"), AstHeap::or as EvalFn),
+                (String::from("@not"), AstHeap::not as EvalFn),
+                (String::from("@eql"), AstHeap::equal as EvalFn),
+                (String::from("@neq"), AstHeap::not_equal as EvalFn),
+                (String::from("@gtr"), AstHeap::greater as EvalFn),
+                (String::from("@lsr"), AstHeap::lesser as EvalFn),
+                (String::from("@gte"), AstHeap::greater_equal as EvalFn),
+                (String::from("@lte"), AstHeap::lesser_equal as EvalFn),
+                (String::from("@add"), AstHeap::add as EvalFn),
+                (String::from("@sub"), AstHeap::subtract as EvalFn),
+                (String::from("@mul"), AstHeap::multiply as EvalFn),
+                (String::from("@div"), AstHeap::divide as EvalFn),
+                (String::from("@mod"), AstHeap::modulus as EvalFn),
+                (String::from("@neg"), AstHeap::negate as EvalFn),
+            ]),
         };
 
         let nil_atom_id = atoms.put_atoms_in_set(AtomKind::NamedAtom(String::from(".nil")));
@@ -85,6 +111,10 @@ impl AstHeap {
         self.insert(Ast::Identifier(identifier))
     }
 
+    pub(crate) fn create_builtin_function(&mut self, identifier: AtomId) -> AstId {
+        self.insert(Ast::BuiltinFunction(identifier))
+    }
+
     pub(crate) fn create_apply(&mut self, lhs: AstId, rhs: AstId) -> AstId {
         self.insert(Ast::Apply(lhs, rhs))
     }
@@ -112,6 +142,10 @@ impl AstHeap {
         self.asts.get_mut(ast_id.as_usize())
     }
 
+    pub(crate) fn identifier_is_bif(&self, name: &String) -> bool {
+        self.builtin_function_methods.contains_key(name)
+    }
+
     pub(crate) fn println_ast_id(&self, ast_id: &AstId, atoms: &AtomMap) {
         self.print_ast_id(ast_id, atoms);
         println!("");
@@ -135,7 +169,7 @@ impl AstHeap {
                 }
                 print!("}}");
             }
-            Ast::Let(_mutex, ast_id) => {
+            Ast::Let(_scope, ast_id) => {
                 print!("let {{ ... }} in ");
                 self.print_ast_id(ast_id, atoms);
             }
@@ -148,6 +182,16 @@ impl AstHeap {
                 print!(" ");
                 self.print_ast_id(a_id, atoms);
                 print!(")");
+            }
+            Ast::Lambda(arg, expr) => {
+                print!("(\\");
+                self.print_ast_id(arg, atoms);
+                print!(" -> ");
+                self.print_ast_id(expr, atoms);
+                print!(")");
+            }
+            Ast::BuiltinFunction(atom_id) => {
+                print!("Ident({:?})", atoms.string_from_atom(*atom_id).unwrap())
             }
         }
     }
@@ -188,6 +232,10 @@ pub(crate) enum Ast {
     Atom(AtomId),
     /// A string
     String(String),
+    /// A function, with it's captured arg, and it's expression
+    Lambda(AstId, AstId),
+    /// A builtin function
+    BuiltinFunction(AtomId),
     /// Maps AtomId's to an Ast within the file
     Map(HashMap<AtomId, AstId>),
 

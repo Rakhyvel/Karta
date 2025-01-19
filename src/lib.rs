@@ -23,9 +23,10 @@
 //! - [x] ! Simplify operators to be prefix only!
 //! - [x] ! map get, unions, intersection, difference
 //! - [x] ! map keys besides atoms
-//! - [ ] ! tuples
+//! - [x] ! tuples
+//! - [x] ! Add builtin functions
 //! - [ ] ! Add functions with only one argument
-//! - [ ] ! Add functions with multiple arguments
+//! - [ ] ! Add currying
 //! - [ ] ! if then else, layout blocks
 //! - [ ] ! imports
 //! - [ ] Laziness
@@ -223,7 +224,7 @@ mod tests {
 
     #[test]
     fn operators() -> Result<(), String> {
-        let karta_file = KartaFile::new("test = @add (x, y)")?;
+        let karta_file = KartaFile::new("test = @add (19, 4)")?;
 
         let res: i64 = karta_file.eval("test")?.as_int()?;
 

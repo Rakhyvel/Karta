@@ -116,6 +116,7 @@ impl Tokenizer {
                 TokenizerState::Symbol
                     if self.eof()
                         || self.first_char_is_singular()
+                        || self.char_is_singular(char)
                         || char.is_whitespace()
                         || char == '.' =>
                 {
@@ -148,14 +149,18 @@ impl Tokenizer {
     }
 
     fn first_char_is_singular(&self) -> bool {
-        const SINGULAR_CHARS: [char; 6] = ['[', ']', '(', ')', '{', '}'];
-        for c in SINGULAR_CHARS {
-            if c == self
-                .file_contents
+        self.char_is_singular(
+            self.file_contents
                 .chars()
                 .nth(self.starting_cursor)
-                .unwrap()
-            {
+                .unwrap(),
+        )
+    }
+
+    fn char_is_singular(&self, c: char) -> bool {
+        const SINGULAR_CHARS: [char; 7] = ['[', ']', '(', ')', '{', '}', ','];
+        for singular_c in SINGULAR_CHARS {
+            if c == singular_c {
                 return true;
             }
         }

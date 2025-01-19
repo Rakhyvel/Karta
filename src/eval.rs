@@ -1,7 +1,5 @@
-use core::hash;
 use std::{
     collections::HashMap,
-    fmt::format,
     sync::{Arc, Mutex},
 };
 
@@ -22,7 +20,13 @@ impl AstHeap {
         let ast = self.get(root).unwrap().clone();
 
         match ast {
-            Ast::Int(_) | Ast::Float(_) | Ast::Char(_) | Ast::String(_) | Ast::Atom(_) => Ok(root),
+            Ast::Int(_)
+            | Ast::Float(_)
+            | Ast::Char(_)
+            | Ast::String(_)
+            | Ast::Atom(_)
+            | Ast::Lambda(_, _)
+            | Ast::BuiltinFunction(_) => Ok(root),
             Ast::Map(hash_map) => {
                 let mut new_map: HashMap<AtomId, AstId> = HashMap::new();
                 for (k, v) in hash_map {
@@ -77,6 +81,11 @@ impl AstHeap {
                         let value_id = hash_map.get(atom_id).unwrap();
                         Ok(self.eval(*value_id, scope, atoms)?)
                     }
+                    Ast::BuiltinFunction(atom_id) => {
+                        let name = atoms.string_from_atom(*atom_id).unwrap();
+                        let bif = self.builtin_function_methods.get(&name).unwrap();
+                        bif(self, arg_id, scope, atoms)
+                    }
                     _ => {
                         self.println_ast_id(&functor_id, atoms);
                         self.println_ast_id(&arg_id, atoms);
@@ -87,29 +96,29 @@ impl AstHeap {
         }
     }
 
-    fn and(
+    pub(crate) fn and(
         &mut self,
-        lhs_id: AstId,
-        rhs_id: AstId,
+        tuple_id: AstId,
         scope: &Arc<Mutex<Scope>>,
         atoms: &AtomMap,
     ) -> Result<AstId, String> {
+        let (lhs_id, rhs_id) = self.get_pair(tuple_id, scope, atoms)?;
         let value = self.truthy(lhs_id, scope, atoms)? && self.truthy(rhs_id, scope, atoms)?;
         Ok(self.create_boolean(value))
     }
 
-    fn or(
+    pub(crate) fn or(
         &mut self,
-        lhs_id: AstId,
-        rhs_id: AstId,
+        tuple_id: AstId,
         scope: &Arc<Mutex<Scope>>,
         atoms: &AtomMap,
     ) -> Result<AstId, String> {
+        let (lhs_id, rhs_id) = self.get_pair(tuple_id, scope, atoms)?;
         let value = self.truthy(lhs_id, scope, atoms)? || self.truthy(rhs_id, scope, atoms)?;
         Ok(self.create_boolean(value))
     }
 
-    fn not(
+    pub(crate) fn not(
         &mut self,
         expr_id: AstId,
         scope: &Arc<Mutex<Scope>>,
@@ -119,7 +128,7 @@ impl AstHeap {
         Ok(self.create_boolean(value))
     }
 
-    fn truthy(
+    pub(crate) fn truthy(
         &mut self,
         ast_id: AstId,
         scope: &Arc<Mutex<Scope>>,
@@ -133,13 +142,13 @@ impl AstHeap {
         }
     }
 
-    fn equal(
+    pub(crate) fn equal(
         &mut self,
-        lhs_id: AstId,
-        rhs_id: AstId,
+        tuple_id: AstId,
         scope: &Arc<Mutex<Scope>>,
         atoms: &AtomMap,
     ) -> Result<AstId, String> {
+        let (lhs_id, rhs_id) = self.get_pair(tuple_id, scope, atoms)?;
         let asts = self.binop_eval(lhs_id, rhs_id, scope, atoms)?;
         match self.binop_get(asts)? {
             (Ast::Int(x), Ast::Int(y)) => Ok(self.create_boolean(x == y)),
@@ -149,13 +158,13 @@ impl AstHeap {
         }
     }
 
-    fn not_equal(
+    pub(crate) fn not_equal(
         &mut self,
-        lhs_id: AstId,
-        rhs_id: AstId,
+        tuple_id: AstId,
         scope: &Arc<Mutex<Scope>>,
         atoms: &AtomMap,
     ) -> Result<AstId, String> {
+        let (lhs_id, rhs_id) = self.get_pair(tuple_id, scope, atoms)?;
         let asts = self.binop_eval(lhs_id, rhs_id, scope, atoms)?;
         match self.binop_get(asts)? {
             (Ast::Int(x), Ast::Int(y)) => Ok(self.create_boolean(x != y)),
@@ -165,13 +174,13 @@ impl AstHeap {
         }
     }
 
-    fn greater(
+    pub(crate) fn greater(
         &mut self,
-        lhs_id: AstId,
-        rhs_id: AstId,
+        tuple_id: AstId,
         scope: &Arc<Mutex<Scope>>,
         atoms: &AtomMap,
     ) -> Result<AstId, String> {
+        let (lhs_id, rhs_id) = self.get_pair(tuple_id, scope, atoms)?;
         let asts = self.binop_eval(lhs_id, rhs_id, scope, atoms)?;
         match self.binop_get(asts)? {
             (Ast::Int(x), Ast::Int(y)) => Ok(self.create_boolean(x > y)),
@@ -180,13 +189,13 @@ impl AstHeap {
         }
     }
 
-    fn lesser(
+    pub(crate) fn lesser(
         &mut self,
-        lhs_id: AstId,
-        rhs_id: AstId,
+        tuple_id: AstId,
         scope: &Arc<Mutex<Scope>>,
         atoms: &AtomMap,
     ) -> Result<AstId, String> {
+        let (lhs_id, rhs_id) = self.get_pair(tuple_id, scope, atoms)?;
         let asts = self.binop_eval(lhs_id, rhs_id, scope, atoms)?;
         match self.binop_get(asts)? {
             (Ast::Int(x), Ast::Int(y)) => Ok(self.create_boolean(x < y)),
@@ -195,13 +204,13 @@ impl AstHeap {
         }
     }
 
-    fn greater_equal(
+    pub(crate) fn greater_equal(
         &mut self,
-        lhs_id: AstId,
-        rhs_id: AstId,
+        tuple_id: AstId,
         scope: &Arc<Mutex<Scope>>,
         atoms: &AtomMap,
     ) -> Result<AstId, String> {
+        let (lhs_id, rhs_id) = self.get_pair(tuple_id, scope, atoms)?;
         let asts = self.binop_eval(lhs_id, rhs_id, scope, atoms)?;
         match self.binop_get(asts)? {
             (Ast::Int(x), Ast::Int(y)) => Ok(self.create_boolean(x >= y)),
@@ -210,13 +219,13 @@ impl AstHeap {
         }
     }
 
-    fn lesser_equal(
+    pub(crate) fn lesser_equal(
         &mut self,
-        lhs_id: AstId,
-        rhs_id: AstId,
+        tuple_id: AstId,
         scope: &Arc<Mutex<Scope>>,
         atoms: &AtomMap,
     ) -> Result<AstId, String> {
+        let (lhs_id, rhs_id) = self.get_pair(tuple_id, scope, atoms)?;
         let asts = self.binop_eval(lhs_id, rhs_id, scope, atoms)?;
         match self.binop_get(asts)? {
             (Ast::Int(x), Ast::Int(y)) => Ok(self.create_boolean(x <= y)),
@@ -225,13 +234,13 @@ impl AstHeap {
         }
     }
 
-    fn add(
+    pub(crate) fn add(
         &mut self,
-        lhs_id: AstId,
-        rhs_id: AstId,
+        tuple_id: AstId,
         scope: &Arc<Mutex<Scope>>,
         atoms: &AtomMap,
     ) -> Result<AstId, String> {
+        let (lhs_id, rhs_id) = self.get_pair(tuple_id, scope, atoms)?;
         let asts = self.binop_eval(lhs_id, rhs_id, scope, atoms)?;
         match self.binop_get(asts)? {
             (Ast::Int(x), Ast::Int(y)) => Ok(self.create_int(x + y)),
@@ -240,13 +249,13 @@ impl AstHeap {
         }
     }
 
-    fn subtract(
+    pub(crate) fn subtract(
         &mut self,
-        lhs_id: AstId,
-        rhs_id: AstId,
+        tuple_id: AstId,
         scope: &Arc<Mutex<Scope>>,
         atoms: &AtomMap,
     ) -> Result<AstId, String> {
+        let (lhs_id, rhs_id) = self.get_pair(tuple_id, scope, atoms)?;
         let asts = self.binop_eval(lhs_id, rhs_id, scope, atoms)?;
         match self.binop_get(asts)? {
             (Ast::Int(x), Ast::Int(y)) => Ok(self.create_int(x - y)),
@@ -255,13 +264,13 @@ impl AstHeap {
         }
     }
 
-    fn multiply(
+    pub(crate) fn multiply(
         &mut self,
-        lhs_id: AstId,
-        rhs_id: AstId,
+        tuple_id: AstId,
         scope: &Arc<Mutex<Scope>>,
         atoms: &AtomMap,
     ) -> Result<AstId, String> {
+        let (lhs_id, rhs_id) = self.get_pair(tuple_id, scope, atoms)?;
         let asts = self.binop_eval(lhs_id, rhs_id, scope, atoms)?;
         match self.binop_get(asts)? {
             (Ast::Int(x), Ast::Int(y)) => Ok(self.create_int(x * y)),
@@ -270,13 +279,13 @@ impl AstHeap {
         }
     }
 
-    fn divide(
+    pub(crate) fn divide(
         &mut self,
-        lhs_id: AstId,
-        rhs_id: AstId,
+        tuple_id: AstId,
         scope: &Arc<Mutex<Scope>>,
         atoms: &AtomMap,
     ) -> Result<AstId, String> {
+        let (lhs_id, rhs_id) = self.get_pair(tuple_id, scope, atoms)?;
         let asts = self.binop_eval(lhs_id, rhs_id, scope, atoms)?;
         match self.binop_get(asts)? {
             (Ast::Int(x), Ast::Int(y)) => Ok(self.create_int(x / y)),
@@ -285,13 +294,13 @@ impl AstHeap {
         }
     }
 
-    fn modulus(
+    pub(crate) fn modulus(
         &mut self,
-        lhs_id: AstId,
-        rhs_id: AstId,
+        tuple_id: AstId,
         scope: &Arc<Mutex<Scope>>,
         atoms: &AtomMap,
     ) -> Result<AstId, String> {
+        let (lhs_id, rhs_id) = self.get_pair(tuple_id, scope, atoms)?;
         let asts = self.binop_eval(lhs_id, rhs_id, scope, atoms)?;
         match self.binop_get(asts)? {
             (Ast::Int(x), Ast::Int(y)) => Ok(self.create_int(x % y)),
@@ -299,7 +308,7 @@ impl AstHeap {
         }
     }
 
-    fn negate(
+    pub(crate) fn negate(
         &mut self,
         expr_id: AstId,
         scope: &Arc<Mutex<Scope>>,
@@ -320,6 +329,24 @@ impl AstHeap {
         } else {
             self.nil_id
         }
+    }
+
+    fn get_pair(
+        &mut self,
+        tuple_id: AstId,
+        scope: &Arc<Mutex<Scope>>,
+        atoms: &AtomMap,
+    ) -> Result<(AstId, AstId), String> {
+        let zero = self.create_int(0);
+        let one = self.create_int(1);
+
+        let deref_0 = self.create_apply(tuple_id, zero);
+        let deref_1 = self.create_apply(tuple_id, one);
+
+        let evald_lhs = self.eval(deref_0, scope, atoms)?;
+        let evald_rhs = self.eval(deref_1, scope, atoms)?;
+
+        Ok((evald_lhs, evald_rhs))
     }
 
     fn binop_eval(

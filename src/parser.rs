@@ -58,9 +58,9 @@ impl Parser {
         let _ = tokenizer.tokenize(&mut self.tokens).unwrap();
         layout::layout(&mut self.tokens);
 
-        // for token in &self.tokens {
-        // println!("{:?}({}) ", token.kind, token.data)
-        // }
+        for token in &self.tokens {
+            println!("{:?}({}) ", token.kind, token.data)
+        }
     }
 
     /// Returns the token at the begining of the stream without removing it
@@ -227,7 +227,11 @@ impl Parser {
             Ok(ast_heap.create_atom(atom_value))
         } else if let Some(token) = self.accept(TokenKind::Identifier) {
             let atom_value = atoms.put_atoms_in_set(AtomKind::NamedAtom(token.data.clone()));
-            Ok(ast_heap.create_identifier(atom_value))
+            if ast_heap.identifier_is_bif(&token.data) {
+                Ok(ast_heap.create_builtin_function(atom_value))
+            } else {
+                Ok(ast_heap.create_identifier(atom_value))
+            }
         } else if let Some(_token) = self.accept(TokenKind::LeftBrace) {
             let mut children: HashMap<AtomId, AstId> = HashMap::new();
             loop {
