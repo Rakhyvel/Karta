@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fmt::Display};
 
 pub(crate) struct AtomMap {
-    atoms: HashMap<String, AtomId>,
+    atoms: HashMap<AtomKind, AtomId>,
 }
 
 impl AtomMap {
@@ -11,19 +11,32 @@ impl AtomMap {
         }
     }
 
-    pub(crate) fn put_atoms_in_set(&mut self, atom: &str) -> AtomId {
-        let atom_string = String::from(atom);
-        if let Some(the_atom) = self.atoms.get(&atom_string) {
+    pub(crate) fn put_atoms_in_set(&mut self, atom: AtomKind) -> AtomId {
+        if let Some(the_atom) = self.atoms.get(&atom) {
             return *the_atom;
         } else {
             let the_atom = AtomId::new(self.atoms.len());
-            self.atoms.insert(atom_string, the_atom);
+            self.atoms.insert(atom, the_atom);
             the_atom
         }
     }
 
-    pub(crate) fn get(&self, key: &str) -> Option<&AtomId> {
-        self.atoms.get(&String::from(key))
+    pub(crate) fn get(&self, key: AtomKind) -> Option<&AtomId> {
+        self.atoms.get(&key)
+    }
+
+    pub(crate) fn string_from_atom(&self, atom_id: AtomId) -> Option<String> {
+        for (k, v) in &self.atoms {
+            match k {
+                AtomKind::NamedAtom(name) => {
+                    if (*v) == atom_id {
+                        return Some(name.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
     }
 }
 
@@ -47,4 +60,11 @@ impl Display for AtomId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "AtomId:{}", self.0)
     }
+}
+
+#[derive(Eq, Hash, PartialEq)]
+pub enum AtomKind {
+    Int(i64),
+    Char(char),
+    NamedAtom(String),
 }

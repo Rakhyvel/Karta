@@ -1,17 +1,18 @@
+use core::hash;
 use std::{
     collections::HashMap,
+    fmt::format,
     sync::{Arc, Mutex},
 };
 
 use crate::{
     ast::{Ast, AstHeap, AstId},
-    atom::{AtomId, AtomMap},
+    atom::{AtomId, AtomKind, AtomMap},
     scope::Scope,
 };
 
 impl AstHeap {
     /// Takes in an AST heap & atoms, and a root AstId and returns the evaluated AstId, or an error if something went wrong
-    /// TODO: Accept a scope.
     pub(crate) fn eval(
         &mut self,
         root: AstId,
@@ -22,8 +23,6 @@ impl AstHeap {
 
         match ast {
             Ast::Int(_) | Ast::Float(_) | Ast::Char(_) | Ast::String(_) | Ast::Atom(_) => Ok(root),
-
-            // Replace all values with an updated version
             Ast::Map(hash_map) => {
                 let mut new_map: HashMap<AtomId, AstId> = HashMap::new();
                 for (k, v) in hash_map {
@@ -36,18 +35,55 @@ impl AstHeap {
                 let mut curr_scope: Option<Arc<Mutex<Scope>>> = Some(scope.clone());
                 loop {
                     if let Some(some_curr_scope) = curr_scope {
-                        let s = some_curr_scope.lock().unwrap();
-                        if let Some(ast_id) = s.get(id) {
+                        let ast_id;
+                        let parent;
+                        {
+                            let s = some_curr_scope.try_lock().unwrap();
+                            ast_id = s.get(id);
+                            parent = s.parent().cloned();
+                        }
+
+                        if let Some(ast_id) = ast_id {
                             return self.eval(ast_id, scope, atoms);
                         } else {
-                            curr_scope = s.parent().cloned()
+                            curr_scope = parent;
                         }
                     } else {
-                        panic!("cannot find identifier");
+                        return Err(format!(
+                            "use of undefined identifier `{}`",
+                            atoms.string_from_atom(id).unwrap()
+                        ));
                     }
                 }
             }
-            Ast::Apply(_, _) => todo!(),
+            Ast::Apply(functor_id, arg_id) => {
+                let eval_functor_id = self.eval(functor_id, scope, atoms)?;
+                let eval_arg_id = self.eval(arg_id, scope, atoms)?;
+                let functor = self.get(eval_functor_id).unwrap();
+                let arg = self.get(eval_arg_id).unwrap();
+
+                match functor {
+                    Ast::Map(hash_map) => {
+                        let atom_id = match arg {
+                            Ast::Atom(atom_id) => atom_id,
+                            Ast::Int(n) => atoms.get(AtomKind::Int(*n)).unwrap(),
+                            Ast::Char(c) => atoms.get(AtomKind::Char(*c)).unwrap(),
+                            _ => {
+                                self.println_ast_id(&functor_id, atoms);
+                                self.println_ast_id(&arg_id, atoms);
+                                return Err(format!("cannot apply those ^"));
+                            }
+                        };
+                        let value_id = hash_map.get(atom_id).unwrap();
+                        Ok(self.eval(*value_id, scope, atoms)?)
+                    }
+                    _ => {
+                        self.println_ast_id(&functor_id, atoms);
+                        self.println_ast_id(&arg_id, atoms);
+                        return Err(format!("cannot apply those ^"));
+                    }
+                }
+            }
         }
     }
 

@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    atom::{AtomId, AtomMap},
+    atom::{AtomId, AtomKind, AtomMap},
     scope::Scope,
 };
 
@@ -28,10 +28,10 @@ impl AstHeap {
             empty_map_id: AstId::new(0),
         };
 
-        let nil_atom_id = atoms.put_atoms_in_set(".nil");
+        let nil_atom_id = atoms.put_atoms_in_set(AtomKind::NamedAtom(String::from(".nil")));
         retval.nil_id = retval.create_atom(nil_atom_id);
 
-        let truthy_id = atoms.put_atoms_in_set(".t");
+        let truthy_id = atoms.put_atoms_in_set(AtomKind::NamedAtom(String::from(".t")));
         retval.nil_id = retval.create_atom(truthy_id);
 
         let empty_map = HashMap::new();
@@ -58,7 +58,7 @@ impl AstHeap {
     }
 
     /// Inserts a char Ast, and returns it's ID
-    pub(crate) fn create_char(&mut self, value: u8) -> AstId {
+    pub(crate) fn create_char(&mut self, value: char) -> AstId {
         self.insert(Ast::Char(value))
     }
 
@@ -111,6 +111,46 @@ impl AstHeap {
     pub(crate) fn get_mut(&mut self, ast_id: AstId) -> Option<&mut Ast> {
         self.asts.get_mut(ast_id.as_usize())
     }
+
+    pub(crate) fn println_ast_id(&self, ast_id: &AstId, atoms: &AtomMap) {
+        self.print_ast_id(ast_id, atoms);
+        println!("");
+    }
+
+    pub(crate) fn print_ast_id(&self, ast_id: &AstId, atoms: &AtomMap) {
+        let ast = self.get(*ast_id).unwrap();
+        match ast {
+            Ast::Int(x) => print!("{}", x),
+            Ast::Float(x) => print!("{}", x),
+            Ast::Char(x) => print!("'{}'", x),
+            Ast::String(x) => print!("\"{}\"", x),
+            Ast::Atom(atom_id) => print!("{:?}", atom_id),
+
+            Ast::Map(hash_map) => {
+                print!("{{");
+                for (k, v) in hash_map {
+                    print!("{:?} = ", k);
+                    self.print_ast_id(v, atoms);
+                    print!(", ");
+                }
+                print!("}}");
+            }
+            Ast::Let(_mutex, ast_id) => {
+                print!("let {{ ... }} in ");
+                self.print_ast_id(ast_id, atoms);
+            }
+            Ast::Identifier(atom_id) => {
+                print!("Ident({:?})", atoms.string_from_atom(*atom_id).unwrap())
+            }
+            Ast::Apply(f_id, a_id) => {
+                print!("(");
+                self.print_ast_id(f_id, atoms);
+                print!(" ");
+                self.print_ast_id(a_id, atoms);
+                print!(")");
+            }
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -143,11 +183,11 @@ pub(crate) enum Ast {
     /// A floating point number
     Float(f64),
     /// A character
-    Char(u8),
-    /// A string
-    String(String),
+    Char(char),
     /// An atomic value
     Atom(AtomId),
+    /// A string
+    String(String),
     /// Maps AtomId's to an Ast within the file
     Map(HashMap<AtomId, AstId>),
 

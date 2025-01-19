@@ -1,5 +1,6 @@
 use crate::{
     ast::{Ast, AstId},
+    atom::AtomKind,
     KartaFile,
 };
 
@@ -23,7 +24,7 @@ impl<'a> KartaQuery<'a> {
 
     /// Return a new query with it's result being the result of applying the atom to the current result.
     /// The result becomes an error if applied to a non-map, or if the previous result was errant.
-    pub fn get(mut self, field: &str) -> Self {
+    pub fn get(mut self, field: AtomKind) -> Self {
         let current_result = match self.current_result {
             Ok(x) => x,
             Err(_) => return self,
@@ -90,7 +91,6 @@ impl<'a> KartaQuery<'a> {
             match ast {
                 Ast::Int(x) => Ok(T::from(*x as f64)),
                 Ast::Float(x) => Ok(T::from(*x as f64)),
-                Ast::Char(x) => Ok(T::from(*x as f64)),
                 _ => Err(format!("cannot convert {:?} to float", ast)),
             }
         } else {
@@ -177,8 +177,14 @@ impl<'a> Iterator for KartaListIterator<'a> {
         if self.query.is_empty_map().unwrap() {
             None
         } else {
-            let head = self.query.clone().get(".head");
-            let tail = self.query.clone().get(".tail");
+            let head = self
+                .query
+                .clone()
+                .get(AtomKind::NamedAtom(String::from(".head")));
+            let tail = self
+                .query
+                .clone()
+                .get(AtomKind::NamedAtom(String::from(".tail")));
             self.query = tail;
             Some(head)
         }

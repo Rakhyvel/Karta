@@ -20,14 +20,16 @@
 //!     - terms
 //!     - ()
 //! - [x] ! Add `let` ... `in`
-//! - [ ] ! Simplify operators to be prefix only!
-//! - [ ] ! map get, unions, intersection, difference
-//! - [ ] ! if then else, layout blocks
-//! - [ ] ! imports
+//! - [x] ! Simplify operators to be prefix only!
+//! - [x] ! map get, unions, intersection, difference
+//! - [ ] ! map keys besides atoms
+//! - [ ] ! tuples
 //! - [ ] ! Add functions with only one argument
 //! - [ ] ! Add functions with multiple arguments
-//! - [ ] ! tuples
-//! - [ ] ! String interpolation
+//! - [ ] ! if then else, layout blocks
+//! - [ ] ! imports
+//! - [ ] Laziness
+//! - [ ] String interpolation
 //! - [ ] Implement REPL
 //! - [ ] Add `where`
 //! - [ ] Sets
@@ -106,8 +108,8 @@ impl KartaFile {
     pub fn eval(&self, expr_str: &str) -> Result<KartaQuery, String> {
         let mut parser = Parser::new();
         let result = {
-            let mut ast_heap = self.ast_heap.lock().unwrap();
-            let mut atoms = self.atoms.lock().unwrap();
+            let mut ast_heap = self.ast_heap.try_lock().unwrap();
+            let mut atoms = self.atoms.try_lock().unwrap();
 
             let expr_ast = parser.parse_expr(
                 String::from(expr_str),
@@ -123,12 +125,12 @@ impl KartaFile {
 
     /// The Ast Heap of this Karta file
     pub(crate) fn ast_heap(&self) -> std::sync::MutexGuard<'_, AstHeap> {
-        self.ast_heap.lock().unwrap() // Automatically unlocks when it goes out of scope
+        self.ast_heap.try_lock().unwrap() // Automatically unlocks when it goes out of scope
     }
 
     /// The atoms map for this Karta file
     pub(crate) fn atoms(&self) -> std::sync::MutexGuard<'_, AtomMap> {
-        self.atoms.lock().unwrap() // Automatically unlocks when it goes out of scope
+        self.atoms.try_lock().unwrap() // Automatically unlocks when it goes out of scope
     }
 }
 
@@ -221,7 +223,7 @@ mod tests {
 
     #[test]
     fn operators() -> Result<(), String> {
-        let karta_file = KartaFile::new("test = (* (+ 3 5) 4)")?;
+        let karta_file = KartaFile::new("test = @add (x, y)")?;
 
         let res: i64 = karta_file.eval("test")?.as_int()?;
 
@@ -247,13 +249,24 @@ mod tests {
             r#"test = let
   x = 4
   y = 5
-in + x y
+in (+ x y)
 "#,
         )?;
 
         let res: i64 = karta_file.eval("test")?.as_int()?;
 
         assert_eq!(res, 9);
+
+        Ok(())
+    }
+
+    #[test]
+    fn integer_map_keys() -> Result<(), String> {
+        let kartra_file = KartaFile::new("test = {0 = 23}")?;
+
+        let res: i64 = kartra_file.eval("test 0")?.as_int()?;
+
+        assert_eq!(res, 23);
 
         Ok(())
     }

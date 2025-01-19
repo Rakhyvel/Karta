@@ -114,7 +114,10 @@ impl Tokenizer {
 
                 // Symbols end at the end of the file, or if the next token isn't recognized
                 TokenizerState::Symbol
-                    if self.eof() || self.first_char_is_singular() || char.is_whitespace() =>
+                    if self.eof()
+                        || self.first_char_is_singular()
+                        || char.is_whitespace()
+                        || char == '.' =>
                 {
                     let token_data = &self.file_contents[self.starting_cursor..self.cursor];
                     let token_kind = TokenKind::from_string(token_data);

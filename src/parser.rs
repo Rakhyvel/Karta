@@ -5,7 +5,7 @@ use std::{
 
 use crate::{
     ast::{Ast, AstHeap, AstId},
-    atom::{AtomId, AtomMap},
+    atom::{AtomId, AtomKind, AtomMap},
     layout,
     scope::Scope,
     tokenizer::{Token, TokenKind, Tokenizer},
@@ -58,9 +58,9 @@ impl Parser {
         let _ = tokenizer.tokenize(&mut self.tokens).unwrap();
         layout::layout(&mut self.tokens);
 
-        for token in &self.tokens {
-            println!("{:?}({}) ", token.kind, token.data)
-        }
+        // for token in &self.tokens {
+        // println!("{:?}({}) ", token.kind, token.data)
+        // }
     }
 
     /// Returns the token at the begining of the stream without removing it
@@ -132,10 +132,10 @@ impl Parser {
 
             let _ = self.accept(TokenKind::Newline);
 
-            let key = atoms.put_atoms_in_set(&identifier.data);
+            let key = atoms.put_atoms_in_set(AtomKind::NamedAtom(String::from(&identifier.data)));
 
-            println!("{:?} = {:?}", key, value);
-            let mut scope = scope.lock().unwrap();
+            // println!("{:?} = {:?}", key, value);
+            let mut scope = scope.try_lock().unwrap();
             scope.insert(key, value);
         }
         Ok(())
@@ -193,15 +193,15 @@ impl Parser {
         } else if let Some(token) = self.accept(TokenKind::Float) {
             Ok(ast_heap.create_float(token.data.parse::<f64>().unwrap()))
         } else if let Some(token) = self.accept(TokenKind::Char) {
-            Ok(ast_heap.create_char(token.data.as_bytes()[1]))
+            Ok(ast_heap.create_char(token.data.chars().nth(1).unwrap()))
         } else if let Some(token) = self.accept(TokenKind::String) {
             let token_len = token.data.len();
             Ok(ast_heap.create_string(String::from(&token.data[1..token_len - 1])))
         } else if let Some(token) = self.accept(TokenKind::Atom) {
-            let atom_value = atoms.put_atoms_in_set(&token.data.as_str());
+            let atom_value = atoms.put_atoms_in_set(AtomKind::NamedAtom(token.data.clone()));
             Ok(ast_heap.create_atom(atom_value))
         } else if let Some(token) = self.accept(TokenKind::Identifier) {
-            let atom_value = atoms.put_atoms_in_set(&token.data.as_str());
+            let atom_value = atoms.put_atoms_in_set(AtomKind::NamedAtom(token.data.clone()));
             Ok(ast_heap.create_identifier(atom_value))
         } else if let Some(_token) = self.accept(TokenKind::LeftBrace) {
             let mut children: HashMap<AtomId, AstId> = HashMap::new();
@@ -209,7 +209,9 @@ impl Parser {
                 let key_ast_id = self.let_in_expr(ast_heap, atoms, scope)?;
                 let key = match *ast_heap.get(key_ast_id).unwrap() {
                     Ast::Atom(s) => s,
-                    _ => return Err(String::from("bad!")),
+                    Ast::Int(n) => atoms.put_atoms_in_set(AtomKind::Int(n)),
+                    Ast::Char(c) => atoms.put_atoms_in_set(AtomKind::Char(c)),
+                    _ => return Err(String::from("cannot use this as a key")),
                 };
                 let _ = self.expect(TokenKind::Assign)?;
                 let value = self.let_in_expr(ast_heap, atoms, scope)?;
@@ -224,8 +226,8 @@ impl Parser {
 
             Ok(ast_heap.create_map(children))
         } else if let Some(_token) = self.accept(TokenKind::LeftSquare) {
-            let head_atom = atoms.put_atoms_in_set(".head");
-            let tail_atom = atoms.put_atoms_in_set(".tail");
+            let head_atom = atoms.put_atoms_in_set(AtomKind::NamedAtom(String::from(".head")));
+            let tail_atom = atoms.put_atoms_in_set(AtomKind::NamedAtom(String::from(".tail")));
 
             if self.accept(TokenKind::RightSquare).is_some() {
                 Ok(ast_heap.nil_id)
