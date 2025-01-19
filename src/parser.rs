@@ -141,6 +141,31 @@ impl Parser {
         Ok(())
     }
 
+    fn tuple_expr(
+        &mut self,
+        ast_heap: &mut AstHeap,
+        atoms: &mut AtomMap,
+        scope: &Arc<Mutex<Scope>>,
+    ) -> Result<AstId, String> {
+        let expr = self.expr(ast_heap, atoms, scope)?;
+        if self.peek().kind == TokenKind::Comma {
+            let mut i: i64 = 0;
+            let mut children: HashMap<AtomId, AstId> = HashMap::new();
+            children.insert(atoms.put_atoms_in_set(AtomKind::Int(i)), expr);
+
+            // Construct map, assign 0 to expr, set expr to the map
+            while let Some(_) = self.accept(TokenKind::Comma) {
+                i += 1;
+                let elem = self.let_in_expr(ast_heap, atoms, scope)?;
+                children.insert(atoms.put_atoms_in_set(AtomKind::Int(i)), elem);
+            }
+
+            Ok(ast_heap.create_map(children))
+        } else {
+            Ok(expr)
+        }
+    }
+
     fn let_in_expr(
         &mut self,
         ast_heap: &mut AstHeap,
@@ -250,7 +275,7 @@ impl Parser {
                 Ok(retval)
             }
         } else if let Some(_token) = self.accept(TokenKind::LeftParen) {
-            let retval = self.let_in_expr(ast_heap, atoms, scope)?;
+            let retval = self.tuple_expr(ast_heap, atoms, scope)?;
             let _ = self.expect(TokenKind::RightParen)?;
             Ok(retval)
         } else {

@@ -66,5 +66,5 @@ impl Display for AtomId {
 pub enum AtomKind {
     Int(i64),
     Char(char),
-    NamedAtom(String),
+    NamedAtom(String), // TODO: Could hash this before, and only store the hash
 }

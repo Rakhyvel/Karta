@@ -22,7 +22,7 @@
 //! - [x] ! Add `let` ... `in`
 //! - [x] ! Simplify operators to be prefix only!
 //! - [x] ! map get, unions, intersection, difference
-//! - [ ] ! map keys besides atoms
+//! - [x] ! map keys besides atoms
 //! - [ ] ! tuples
 //! - [ ] ! Add functions with only one argument
 //! - [ ] ! Add functions with multiple arguments
@@ -267,6 +267,17 @@ in (+ x y)
         let res: i64 = kartra_file.eval("test 0")?.as_int()?;
 
         assert_eq!(res, 23);
+
+        Ok(())
+    }
+
+    #[test]
+    fn tuples() -> Result<(), String> {
+        let kartra_file = KartaFile::new("test = (1, 2, 3, 4)")?;
+
+        let res: i64 = kartra_file.eval("test 2")?.as_int()?;
+
+        assert_eq!(res, 3);
 
         Ok(())
     }
