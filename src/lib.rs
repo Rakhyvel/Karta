@@ -281,4 +281,15 @@ in (@add (x, y))
 
         Ok(())
     }
+
+    #[test]
+    fn lambdas() -> Result<(), String> {
+        let kartra_file = KartaFile::new("test = (\\x -> @add(x, 4))")?;
+
+        let res: i64 = kartra_file.eval("test 5")?.as_int()?;
+
+        assert_eq!(res, 9);
+
+        Ok(())
+    }
 }

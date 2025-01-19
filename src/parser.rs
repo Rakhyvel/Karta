@@ -58,9 +58,9 @@ impl Parser {
         let _ = tokenizer.tokenize(&mut self.tokens).unwrap();
         layout::layout(&mut self.tokens);
 
-        for token in &self.tokens {
-            println!("{:?}({}) ", token.kind, token.data)
-        }
+        // for token in &self.tokens {
+        //     println!("{:?}({}) ", token.kind, token.data)
+        // }
     }
 
     /// Returns the token at the begining of the stream without removing it
@@ -71,7 +71,6 @@ impl Parser {
     /// Removes and returns the token at the begining of the stream
     fn pop(&mut self) -> &Token {
         self.cursor += 1;
-        println!("-> {:?}", self.tokens[self.cursor]);
         &self.tokens[self.cursor - 1]
     }
 
@@ -185,8 +184,26 @@ impl Parser {
                     self.parse_bindings(TokenKind::In, ast_heap, atoms, &new_scope)?;
                 }
                 let _ = self.expect(TokenKind::In)?;
-                let expr = self.apply_expr(ast_heap, atoms, scope)?;
+                let expr = self.lambda_expr(ast_heap, atoms, scope)?;
                 Ok(ast_heap.create_let(new_scope, expr))
+            }
+            _ => self.lambda_expr(ast_heap, atoms, scope),
+        }
+    }
+
+    fn lambda_expr(
+        &mut self,
+        ast_heap: &mut AstHeap,
+        atoms: &mut AtomMap,
+        scope: &Arc<Mutex<Scope>>,
+    ) -> Result<AstId, String> {
+        match self.peek().kind {
+            TokenKind::Backslash => {
+                let _ = self.pop();
+                let name = self.pop().data.clone();
+                let _ = self.expect(TokenKind::Arrow)?;
+                let expr = self.apply_expr(ast_heap, atoms, scope)?;
+                Ok(ast_heap.create_lambda(name, expr))
             }
             _ => self.apply_expr(ast_heap, atoms, scope),
         }

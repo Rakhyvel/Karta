@@ -119,6 +119,10 @@ impl AstHeap {
         self.insert(Ast::Apply(lhs, rhs))
     }
 
+    pub(crate) fn create_lambda(&mut self, arg_name: String, expr: AstId) -> AstId {
+        self.insert(Ast::Lambda(arg_name, expr))
+    }
+
     /// Creates a linked-list node out of a map Ast
     pub(crate) fn make_list_node(
         &mut self,
@@ -158,12 +162,21 @@ impl AstHeap {
             Ast::Float(x) => print!("{}", x),
             Ast::Char(x) => print!("'{}'", x),
             Ast::String(x) => print!("\"{}\"", x),
-            Ast::Atom(atom_id) => print!("{:?}", atom_id),
+            Ast::Atom(atom_id) => match atoms.atom_from_id(*atom_id).unwrap() {
+                AtomKind::NamedAtom(s) => print!("{}", s),
+                AtomKind::Int(n) => print!("{}", n),
+                AtomKind::Char(c) => print!("\'{}\'", c),
+            },
 
             Ast::Map(hash_map) => {
                 print!("{{");
                 for (k, v) in hash_map {
-                    print!("{:?} = ", k);
+                    match atoms.atom_from_id(*k).unwrap() {
+                        AtomKind::NamedAtom(s) => print!("{}", s),
+                        AtomKind::Int(n) => print!("{}", n),
+                        AtomKind::Char(c) => print!("\'{}\'", c),
+                    }
+                    print!(" = ");
                     self.print_ast_id(v, atoms);
                     print!(", ");
                 }
@@ -184,9 +197,7 @@ impl AstHeap {
                 print!(")");
             }
             Ast::Lambda(arg, expr) => {
-                print!("(\\");
-                self.print_ast_id(arg, atoms);
-                print!(" -> ");
+                print!("(\\{} -> ", arg);
                 self.print_ast_id(expr, atoms);
                 print!(")");
             }
@@ -233,7 +244,7 @@ pub(crate) enum Ast {
     /// A string
     String(String),
     /// A function, with it's captured arg, and it's expression
-    Lambda(AstId, AstId),
+    Lambda(String, AstId),
     /// A builtin function
     BuiltinFunction(AtomId),
     /// Maps AtomId's to an Ast within the file

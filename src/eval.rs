@@ -73,8 +73,8 @@ impl AstHeap {
                             Ast::Int(n) => atoms.get(AtomKind::Int(*n)).unwrap(),
                             Ast::Char(c) => atoms.get(AtomKind::Char(*c)).unwrap(),
                             _ => {
-                                self.println_ast_id(&functor_id, atoms);
-                                self.println_ast_id(&arg_id, atoms);
+                                self.println_ast_id(&eval_functor_id, atoms);
+                                self.println_ast_id(&eval_arg_id, atoms);
                                 return Err(format!("cannot apply those ^"));
                             }
                         };
@@ -86,10 +86,20 @@ impl AstHeap {
                         let bif = self.builtin_function_methods.get(&name).unwrap();
                         bif(self, arg_id, scope, atoms)
                     }
+                    Ast::Lambda(arg_name, expr) => {
+                        let new_scope = Scope::new(Some(scope.clone()));
+                        {
+                            let mut mutex = new_scope.try_lock().unwrap();
+                            mutex.insert(
+                                *atoms.get(AtomKind::NamedAtom(arg_name.clone())).unwrap(),
+                                eval_arg_id,
+                            );
+                        }
+                        self.eval(*expr, &new_scope, atoms)
+                    }
                     _ => {
-                        self.println_ast_id(&functor_id, atoms);
-                        self.println_ast_id(&arg_id, atoms);
-                        return Err(format!("cannot apply those ^"));
+                        self.println_ast_id(&eval_functor_id, atoms);
+                        return Err(format!("not a functor ^"));
                     }
                 }
             }

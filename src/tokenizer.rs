@@ -158,7 +158,7 @@ impl Tokenizer {
     }
 
     fn char_is_singular(&self, c: char) -> bool {
-        const SINGULAR_CHARS: [char; 7] = ['[', ']', '(', ')', '{', '}', ','];
+        const SINGULAR_CHARS: [char; 8] = ['[', ']', '(', ')', '{', '}', ',', '\\'];
         for singular_c in SINGULAR_CHARS {
             if c == singular_c {
                 return true;
@@ -232,6 +232,8 @@ pub(crate) enum TokenKind {
     RightSquare,
     LeftParen,
     RightParen,
+    Backslash,
+    Arrow,
     Atom,
     Integer,
     Float,
@@ -258,6 +260,8 @@ impl TokenKind {
             "]" => TokenKind::RightSquare,
             "(" => TokenKind::LeftParen,
             ")" => TokenKind::RightParen,
+            "\\" => TokenKind::Backslash,
+            "->" => TokenKind::Arrow,
             "," => TokenKind::Comma,
             "=" => TokenKind::Assign,
             "let" => TokenKind::Let,

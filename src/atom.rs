@@ -25,6 +25,15 @@ impl AtomMap {
         self.atoms.get(&key)
     }
 
+    pub(crate) fn atom_from_id(&self, atom_id: AtomId) -> Option<AtomKind> {
+        for (k, v) in &self.atoms {
+            if (*v) == atom_id {
+                return Some(k.clone());
+            }
+        }
+        None
+    }
+
     pub(crate) fn string_from_atom(&self, atom_id: AtomId) -> Option<String> {
         for (k, v) in &self.atoms {
             match k {
@@ -62,7 +71,7 @@ impl Display for AtomId {
     }
 }
 
-#[derive(Eq, Hash, PartialEq)]
+#[derive(Eq, Hash, PartialEq, Clone)]
 pub enum AtomKind {
     Int(i64),
     Char(char),
