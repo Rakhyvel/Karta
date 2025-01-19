@@ -71,6 +71,7 @@ impl Parser {
     /// Removes and returns the token at the begining of the stream
     fn pop(&mut self) -> &Token {
         self.cursor += 1;
+        println!("-> {:?}", self.tokens[self.cursor]);
         &self.tokens[self.cursor - 1]
     }
 
@@ -147,13 +148,12 @@ impl Parser {
         atoms: &mut AtomMap,
         scope: &Arc<Mutex<Scope>>,
     ) -> Result<AstId, String> {
-        let expr = self.expr(ast_heap, atoms, scope)?;
+        let expr = self.let_in_expr(ast_heap, atoms, scope)?;
         if self.peek().kind == TokenKind::Comma {
             let mut i: i64 = 0;
             let mut children: HashMap<AtomId, AstId> = HashMap::new();
             children.insert(atoms.put_atoms_in_set(AtomKind::Int(i)), expr);
 
-            // Construct map, assign 0 to expr, set expr to the map
             while let Some(_) = self.accept(TokenKind::Comma) {
                 i += 1;
                 let elem = self.let_in_expr(ast_heap, atoms, scope)?;

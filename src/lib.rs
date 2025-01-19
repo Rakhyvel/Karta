@@ -25,9 +25,8 @@
 //! - [x] ! map keys besides atoms
 //! - [x] ! tuples
 //! - [x] ! Add builtin functions
-//! - [ ] ! Add functions with only one argument
-//! - [ ] ! Add currying
-//! - [ ] ! if then else, layout blocks
+//! - [ ] ! Add lambdas
+//! - [ ] ! if then else
 //! - [ ] ! imports
 //! - [ ] Laziness
 //! - [ ] String interpolation
@@ -223,7 +222,7 @@ mod tests {
     }
 
     #[test]
-    fn operators() -> Result<(), String> {
+    fn builtin_functions_operators() -> Result<(), String> {
         let karta_file = KartaFile::new("test = @add (19, 4)")?;
 
         let res: i64 = karta_file.eval("test")?.as_int()?;
@@ -250,7 +249,7 @@ mod tests {
             r#"test = let
   x = 4
   y = 5
-in (+ x y)
+in (@add (x, y))
 "#,
         )?;
 
