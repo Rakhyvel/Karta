@@ -129,6 +129,10 @@ impl AstHeap {
         self.insert(Ast::Closure(arg_name, expr, scope))
     }
 
+    pub(crate) fn create_if(&mut self, cond: AstId, then: AstId, else_: AstId) -> AstId {
+        self.insert(Ast::If(cond, then, else_))
+    }
+
     /// Creates a linked-list node out of a map Ast
     pub(crate) fn make_list_node(
         &mut self,
@@ -213,6 +217,14 @@ impl AstHeap {
             Ast::BuiltinFunction(atom_id) => {
                 print!("Ident({:?})", atoms.string_from_atom(*atom_id).unwrap())
             }
+            Ast::If(cond, then, else_) => {
+                print!("if ");
+                self.print_ast_id(cond, atoms);
+                print!(" then ");
+                self.print_ast_id(then, atoms);
+                print!(" else ");
+                self.print_ast_id(else_, atoms);
+            }
         }
     }
 }
@@ -265,4 +277,6 @@ pub(crate) enum Ast {
     Identifier(AtomId),
 
     Apply(AstId, AstId),
+
+    If(AstId, AstId, AstId),
 }

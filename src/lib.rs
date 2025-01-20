@@ -25,7 +25,7 @@
 //! - [x] ! map keys besides atoms
 //! - [x] ! tuples
 //! - [x] ! Add builtin functions
-//! - [ ] ! Add lambdas
+//! - [x] ! Add lambdas
 //! - [ ] ! if then else
 //! - [ ] ! imports
 //! - [ ] Laziness
@@ -275,7 +275,7 @@ in (@add (x, y))
     fn integer_map_keys() -> Result<(), String> {
         let kartra_file = KartaFile::new("test = {0 = 23}")?;
 
-        let res: i64 = kartra_file.eval("test 0")?.as_int()?;
+        let res: i64 = kartra_file.eval("(test 0)")?.as_int()?;
 
         assert_eq!(res, 23);
 
@@ -286,7 +286,7 @@ in (@add (x, y))
     fn tuples() -> Result<(), String> {
         let kartra_file = KartaFile::new("test = (1, 2, 3, 4)")?;
 
-        let res: i64 = kartra_file.eval("test 2")?.as_int()?;
+        let res: i64 = kartra_file.eval("(test 2)")?.as_int()?;
 
         assert_eq!(res, 3);
 
@@ -297,7 +297,7 @@ in (@add (x, y))
     fn lambdas() -> Result<(), String> {
         let kartra_file = KartaFile::new("test = (\\x -> @add(x, 4))")?;
 
-        let res: i64 = kartra_file.eval("test 5")?.as_int()?;
+        let res: i64 = kartra_file.eval("(test 5)")?.as_int()?;
 
         assert_eq!(res, 9);
 
@@ -306,11 +306,23 @@ in (@add (x, y))
 
     #[test]
     fn curry() -> Result<(), String> {
-        let kartra_file = KartaFile::new("test = (\\x -> (\\y -> @add(x, y)))")?;
+        let kartra_file = KartaFile::new("+ = \\x -> \\y -> @add (x, y)")?;
 
-        let res: i64 = kartra_file.eval("(test 5) 4")?.as_int()?;
+        let res: i64 = kartra_file.eval("(+ 5 4)")?.as_int()?;
 
         assert_eq!(res, 9);
+
+        Ok(())
+    }
+
+    #[test]
+    fn if_then_else() -> Result<(), String> {
+        let kartra_file =
+            KartaFile::new("safe-div = \\x -> \\y -> if @eql(y, 0) then .inf else @div(x, y)")?;
+
+        let res: i64 = kartra_file.eval("(safe-div 100 4)")?.as_int()?;
+
+        assert_eq!(res, 25);
 
         Ok(())
     }

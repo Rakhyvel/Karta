@@ -209,7 +209,7 @@ impl Parser {
                 let _ = self.pop();
                 let name = self.pop().data.clone();
                 let _ = self.expect(TokenKind::Arrow)?;
-                let expr = self.apply_expr(scope, ast_heap, atoms, symbol_table)?;
+                let expr = self.lambda_expr(scope, ast_heap, atoms, symbol_table)?;
                 Ok(ast_heap.create_lambda(name, expr))
             }
             _ => self.apply_expr(scope, ast_heap, atoms, symbol_table),
@@ -258,6 +258,13 @@ impl Parser {
             } else {
                 Ok(ast_heap.create_identifier(atom_value))
             }
+        } else if let Some(_token) = self.accept(TokenKind::If) {
+            let condition = self.let_in_expr(scope, ast_heap, atoms, symbol_table)?;
+            let _ = self.expect(TokenKind::Then);
+            let then = self.let_in_expr(scope, ast_heap, atoms, symbol_table)?;
+            let _ = self.expect(TokenKind::Else);
+            let else_ = self.let_in_expr(scope, ast_heap, atoms, symbol_table)?;
+            Ok(ast_heap.create_if(condition, then, else_))
         } else if let Some(_token) = self.accept(TokenKind::LeftBrace) {
             let mut children: HashMap<AtomId, AstId> = HashMap::new();
             loop {

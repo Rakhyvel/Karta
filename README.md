@@ -7,12 +7,13 @@ The name "Karta" derives from the fact that maps are a core data structure. Data
 ;; This is a comment
 
 my-map = {
-  ;; Any value that begins with a `.` is an atomic value, similar to in Erlang
+  ;; Any value that begins with a `.` is an atomic value, and is basically just a named token
   .x = 5,
   .name = "Joseph",
   .age = 26
 }
 
+;; Lists are linked lists, and made up of map nodes with a head and tail field
 ;; The following lists are equivalent
 my-list = [1, 2, 3]
 my-list' = {
@@ -26,15 +27,16 @@ my-list' = {
   }
 }
 
+;; Sets map keys to `.t`
 ;; The following sets are equivalent
 my-set = {1, 2, 3}
 my-set' = {
-  ;; Sets map their keys to `.t`, which is truthy
   1 = .t,
   2 = .t,
   3 = .t
 }
 
+;; Tuples map their indices to values
 ;; The following tuples are equivalent
 my-tuple = (1, 2, 3)
 my-tuple' = {
@@ -85,7 +87,7 @@ positive-and-even-or-3 = (|| positive-and-even? {3})
 ```
 
 ## Type Predicates
-Karta is a type-predicate based languages. Types are made up of membership functors. These functors determine if a value is within the type. These can then be pattern matched with.
+Karta is a type-predicate based language. Types are made up of membership functors. These functors determine if a value is within the type. These type predicate membership functions can then be used for pattern matching.
 ```
 ;; An example type predicate, matches all even integers
 even? (:n int?) = (== (% n 2) 0)
@@ -101,7 +103,7 @@ Karta uses open multimethods for polymorphism. This allows you to extend any fun
 ```
 ;; In core library:
 length (:list? x) = ; length of a list
-length (:map? x) = ; length of the key set of the map
+length (:map?  x) = ; length of the key set of the map
 
 ;; In your own custom file
 import core

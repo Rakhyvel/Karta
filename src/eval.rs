@@ -46,7 +46,10 @@ impl AstHeap {
                             curr_scope = scope_ref.parent();
                         }
                     } else {
-                        return Ok(root);
+                        return Err(format!(
+                            "use of undefined identifier `{}`",
+                            atoms.string_from_atom(id).unwrap()
+                        ));
                     }
                 }
             }
@@ -86,6 +89,13 @@ impl AstHeap {
                         self.println_ast_id(&eval_functor_id, atoms);
                         return Err(format!("not a functor ^"));
                     }
+                }
+            }
+            Ast::If(cond_id, then_id, else_id) => {
+                if self.truthy(cond_id, scope, atoms, symbols)? {
+                    self.eval(then_id, scope, atoms, symbols)
+                } else {
+                    self.eval(else_id, scope, atoms, symbols)
                 }
             }
         }
@@ -138,7 +148,7 @@ impl AstHeap {
         let evald_id = self.eval(ast_id, scope, atoms, symbols)?;
         let ast = self.get(evald_id).expect("couldn't get Ast for AstId");
         match ast {
-            Ast::Atom(x) => Ok(x.as_usize() != 0),
+            Ast::Atom(x) => Ok(x.as_usize() != self.nil_id.as_usize()),
             _ => Ok(true),
         }
     }
