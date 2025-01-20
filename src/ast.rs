@@ -1,19 +1,16 @@
-use std::{
-    collections::HashMap,
-    fmt::Display,
-    sync::{Arc, Mutex},
-};
+use std::{collections::HashMap, fmt::Display};
 
 use crate::{
     atom::{AtomId, AtomKind, AtomMap},
-    scope::Scope,
+    scope::{ScopeId, SymbolTable},
 };
 
 type EvalFn = for<'a, 'b, 'c> fn(
     &'a mut AstHeap,
     AstId,
-    &'b Arc<Mutex<Scope>>,
-    &'c AtomMap,
+    ScopeId,
+    &'b AtomMap,
+    &'c mut SymbolTable,
 ) -> Result<AstId, String>;
 
 /// Contains the ASTs used in a Karta file
@@ -66,44 +63,44 @@ impl AstHeap {
         retval
     }
 
-    /// Inserts a new Ast into the heap, and returns it's ID
+    /// Inserts a new Ast into the heap, and returns its ID
     fn insert(&mut self, ast: Ast) -> AstId {
         let retval = AstId::new(self.asts.len());
         self.asts.push(ast);
         retval
     }
 
-    /// Inserts an integer Ast, and returns it's ID
+    /// Inserts an integer Ast, and returns its ID
     pub(crate) fn create_int(&mut self, value: i64) -> AstId {
         self.insert(Ast::Int(value))
     }
 
-    /// Inserts a float Ast, and returns it's ID
+    /// Inserts a float Ast, and returns its ID
     pub(crate) fn create_float(&mut self, value: f64) -> AstId {
         self.insert(Ast::Float(value))
     }
 
-    /// Inserts a char Ast, and returns it's ID
+    /// Inserts a char Ast, and returns its ID
     pub(crate) fn create_char(&mut self, value: char) -> AstId {
         self.insert(Ast::Char(value))
     }
 
-    /// Inserts a string Ast, and returns it's ID
+    /// Inserts a string Ast, and returns its ID
     pub(crate) fn create_string(&mut self, value: String) -> AstId {
         self.insert(Ast::String(value))
     }
 
-    /// Inserts an atom Ast, and returns it's ID
+    /// Inserts an atom Ast, and returns its ID
     pub(crate) fn create_atom(&mut self, value: AtomId) -> AstId {
         self.insert(Ast::Atom(value))
     }
 
-    /// Inserts a map Ast, and returns it's ID
+    /// Inserts a map Ast, and returns its ID
     pub(crate) fn create_map(&mut self, value: HashMap<AtomId, AstId>) -> AstId {
         self.insert(Ast::Map(value))
     }
 
-    pub(crate) fn create_let(&mut self, scope: Arc<Mutex<Scope>>, expr: AstId) -> AstId {
+    pub(crate) fn create_let(&mut self, scope: ScopeId, expr: AstId) -> AstId {
         self.insert(Ast::Let(scope, expr))
     }
 
@@ -121,6 +118,15 @@ impl AstHeap {
 
     pub(crate) fn create_lambda(&mut self, arg_name: String, expr: AstId) -> AstId {
         self.insert(Ast::Lambda(arg_name, expr))
+    }
+
+    pub(crate) fn create_closure(
+        &mut self,
+        arg_name: String,
+        expr: AstId,
+        scope: ScopeId,
+    ) -> AstId {
+        self.insert(Ast::Closure(arg_name, expr, scope))
     }
 
     /// Creates a linked-list node out of a map Ast
@@ -201,6 +207,9 @@ impl AstHeap {
                 self.print_ast_id(expr, atoms);
                 print!(")");
             }
+            Ast::Closure(_arg, _expr, _scope) => {
+                print!("Closure()")
+            }
             Ast::BuiltinFunction(atom_id) => {
                 print!("Ident({:?})", atoms.string_from_atom(*atom_id).unwrap())
             }
@@ -243,14 +252,16 @@ pub(crate) enum Ast {
     Atom(AtomId),
     /// A string
     String(String),
-    /// A function, with it's captured arg, and it's expression
+    /// A function, with the name of its arg and expression
     Lambda(String, AstId),
+    /// Closure to represent an applied function
+    Closure(String, AstId, ScopeId),
     /// A builtin function
     BuiltinFunction(AtomId),
     /// Maps AtomId's to an Ast within the file
     Map(HashMap<AtomId, AstId>),
 
-    Let(Arc<Mutex<Scope>>, AstId),
+    Let(ScopeId, AstId),
     Identifier(AtomId),
 
     Apply(AstId, AstId),

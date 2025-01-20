@@ -1,13 +1,10 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::collections::HashMap;
 
 use crate::{
     ast::{Ast, AstHeap, AstId},
     atom::{AtomId, AtomKind, AtomMap},
     layout,
-    scope::Scope,
+    scope::{ScopeId, SymbolTable},
     tokenizer::{Token, TokenKind, Tokenizer},
 };
 
@@ -30,13 +27,14 @@ impl Parser {
     pub(crate) fn parse(
         &mut self,
         file_contents: String,
+        scope: ScopeId,
         ast_heap: &mut AstHeap,
         atoms: &mut AtomMap,
-        scope: &Arc<Mutex<Scope>>,
+        symbol_table: &mut SymbolTable,
     ) -> Result<(), String> {
         self.get_tokens(file_contents);
 
-        self.parse_bindings(TokenKind::EndOfFile, ast_heap, atoms, scope)?;
+        self.parse_bindings(scope, TokenKind::EndOfFile, ast_heap, atoms, symbol_table)?;
 
         Ok(())
     }
@@ -44,13 +42,14 @@ impl Parser {
     pub(crate) fn parse_expr(
         &mut self,
         file_contents: String,
+        scope: ScopeId,
         ast_heap: &mut AstHeap,
         atoms: &mut AtomMap,
-        scope: &Arc<Mutex<Scope>>,
+        symbol_table: &mut SymbolTable,
     ) -> Result<AstId, String> {
         self.get_tokens(file_contents);
 
-        self.let_in_expr(ast_heap, atoms, scope)
+        self.let_in_expr(scope, ast_heap, atoms, symbol_table)
     }
 
     fn get_tokens(&mut self, file_contents: String) {
@@ -102,7 +101,7 @@ impl Parser {
         )
     }
 
-    /// Pops the token at the begining of the stream if it's kind matches the given kind, otherwise None
+    /// Pops the token at the begining of the stream if its kind matches the given kind, otherwise None
     fn accept(&mut self, kind: TokenKind) -> Option<&Token> {
         if !self.eos() && self.peek().kind == kind {
             Some(self.pop())
@@ -111,7 +110,7 @@ impl Parser {
         }
     }
 
-    /// Pops the token at the begining of the stream if it's kind matches the given kind, otherwise Err
+    /// Pops the token at the begining of the stream if its kind matches the given kind, otherwise Err
     fn expect(&mut self, kind: TokenKind) -> Result<&Token, String> {
         let peeked = self.peek().kind;
         let err = self.parse_error(format!("{:?}", kind), format!("{:?}", peeked));
@@ -120,34 +119,34 @@ impl Parser {
 
     fn parse_bindings(
         &mut self,
+        scope: ScopeId,
         end_kind: TokenKind,
         ast_heap: &mut AstHeap,
         atoms: &mut AtomMap,
-        scope: &Arc<Mutex<Scope>>,
+        symbol_table: &mut SymbolTable,
     ) -> Result<(), String> {
         while self.peek().kind != end_kind {
             let identifier = self.expect(TokenKind::Identifier)?.clone();
             let _ = self.expect(TokenKind::Assign)?;
-            let value = self.let_in_expr(ast_heap, atoms, scope)?;
+            let value = self.let_in_expr(scope, ast_heap, atoms, symbol_table)?;
 
             let _ = self.accept(TokenKind::Newline);
 
             let key = atoms.put_atoms_in_set(AtomKind::NamedAtom(String::from(&identifier.data)));
 
-            // println!("{:?} = {:?}", key, value);
-            let mut scope = scope.try_lock().unwrap();
-            scope.insert(key, value);
+            symbol_table.insert(scope, key, value);
         }
         Ok(())
     }
 
     fn tuple_expr(
         &mut self,
+        scope: ScopeId,
         ast_heap: &mut AstHeap,
         atoms: &mut AtomMap,
-        scope: &Arc<Mutex<Scope>>,
+        symbol_table: &mut SymbolTable,
     ) -> Result<AstId, String> {
-        let expr = self.let_in_expr(ast_heap, atoms, scope)?;
+        let expr = self.let_in_expr(scope, ast_heap, atoms, symbol_table)?;
         if self.peek().kind == TokenKind::Comma {
             let mut i: i64 = 0;
             let mut children: HashMap<AtomId, AstId> = HashMap::new();
@@ -155,7 +154,7 @@ impl Parser {
 
             while let Some(_) = self.accept(TokenKind::Comma) {
                 i += 1;
-                let elem = self.let_in_expr(ast_heap, atoms, scope)?;
+                let elem = self.let_in_expr(scope, ast_heap, atoms, symbol_table)?;
                 children.insert(atoms.put_atoms_in_set(AtomKind::Int(i)), elem);
             }
 
@@ -167,57 +166,66 @@ impl Parser {
 
     fn let_in_expr(
         &mut self,
+        scope: ScopeId,
         ast_heap: &mut AstHeap,
         atoms: &mut AtomMap,
-        scope: &Arc<Mutex<Scope>>,
+        symbol_table: &mut SymbolTable,
     ) -> Result<AstId, String> {
         match self.peek().kind {
             TokenKind::Let => {
                 let _ = self.pop();
-                let new_scope = Scope::new(Some(scope.clone()));
+                let new_scope = symbol_table.new_scope(Some(scope));
                 if self.peek().kind == TokenKind::Indent {
                     let _ = self.expect(TokenKind::Indent)?;
-                    self.parse_bindings(TokenKind::Dedent, ast_heap, atoms, &new_scope)?;
+                    self.parse_bindings(
+                        new_scope,
+                        TokenKind::Dedent,
+                        ast_heap,
+                        atoms,
+                        symbol_table,
+                    )?;
                     let _ = self.expect(TokenKind::Dedent)?;
                     let _ = self.accept(TokenKind::Newline);
                 } else {
-                    self.parse_bindings(TokenKind::In, ast_heap, atoms, &new_scope)?;
+                    self.parse_bindings(new_scope, TokenKind::In, ast_heap, atoms, symbol_table)?;
                 }
                 let _ = self.expect(TokenKind::In)?;
-                let expr = self.lambda_expr(ast_heap, atoms, scope)?;
+                let expr = self.lambda_expr(new_scope, ast_heap, atoms, symbol_table)?;
                 Ok(ast_heap.create_let(new_scope, expr))
             }
-            _ => self.lambda_expr(ast_heap, atoms, scope),
+            _ => self.lambda_expr(scope, ast_heap, atoms, symbol_table),
         }
     }
 
     fn lambda_expr(
         &mut self,
+        scope: ScopeId,
         ast_heap: &mut AstHeap,
         atoms: &mut AtomMap,
-        scope: &Arc<Mutex<Scope>>,
+        symbol_table: &mut SymbolTable,
     ) -> Result<AstId, String> {
         match self.peek().kind {
             TokenKind::Backslash => {
                 let _ = self.pop();
                 let name = self.pop().data.clone();
                 let _ = self.expect(TokenKind::Arrow)?;
-                let expr = self.apply_expr(ast_heap, atoms, scope)?;
+                let expr = self.apply_expr(scope, ast_heap, atoms, symbol_table)?;
                 Ok(ast_heap.create_lambda(name, expr))
             }
-            _ => self.apply_expr(ast_heap, atoms, scope),
+            _ => self.apply_expr(scope, ast_heap, atoms, symbol_table),
         }
     }
 
     fn apply_expr(
         &mut self,
+        scope: ScopeId,
         ast_heap: &mut AstHeap,
         atoms: &mut AtomMap,
-        scope: &Arc<Mutex<Scope>>,
+        symbol_table: &mut SymbolTable,
     ) -> Result<AstId, String> {
-        let mut expr = self.expr(ast_heap, atoms, scope)?;
+        let mut expr = self.expr(scope, ast_heap, atoms, symbol_table)?;
         while self.next_is_expr() {
-            let rhs = self.expr(ast_heap, atoms, scope)?;
+            let rhs = self.expr(scope, ast_heap, atoms, symbol_table)?;
             expr = ast_heap.create_apply(expr, rhs);
         }
         Ok(expr)
@@ -226,9 +234,10 @@ impl Parser {
     /// Parses an expression
     fn expr(
         &mut self,
+        scope: ScopeId,
         ast_heap: &mut AstHeap,
         atoms: &mut AtomMap,
-        scope: &Arc<Mutex<Scope>>,
+        symbol_table: &mut SymbolTable,
     ) -> Result<AstId, String> {
         if let Some(token) = self.accept(TokenKind::Integer) {
             Ok(ast_heap.create_int(token.data.parse::<i64>().unwrap()))
@@ -252,7 +261,7 @@ impl Parser {
         } else if let Some(_token) = self.accept(TokenKind::LeftBrace) {
             let mut children: HashMap<AtomId, AstId> = HashMap::new();
             loop {
-                let key_ast_id = self.let_in_expr(ast_heap, atoms, scope)?;
+                let key_ast_id = self.let_in_expr(scope, ast_heap, atoms, symbol_table)?;
                 let key = match *ast_heap.get(key_ast_id).unwrap() {
                     Ast::Atom(s) => s,
                     Ast::Int(n) => atoms.put_atoms_in_set(AtomKind::Int(n)),
@@ -260,7 +269,7 @@ impl Parser {
                     _ => return Err(String::from("cannot use this as a key")),
                 };
                 let _ = self.expect(TokenKind::Assign)?;
-                let value = self.let_in_expr(ast_heap, atoms, scope)?;
+                let value = self.let_in_expr(scope, ast_heap, atoms, symbol_table)?;
 
                 children.insert(key, value);
 
@@ -278,11 +287,11 @@ impl Parser {
             if self.accept(TokenKind::RightSquare).is_some() {
                 Ok(ast_heap.nil_id)
             } else {
-                let head = self.let_in_expr(ast_heap, atoms, scope)?;
+                let head = self.let_in_expr(scope, ast_heap, atoms, symbol_table)?;
                 let retval = ast_heap.make_list_node(head_atom, head, tail_atom);
                 let mut curr_id = retval;
                 while self.accept(TokenKind::Comma).is_some() {
-                    let head = self.let_in_expr(ast_heap, atoms, scope)?;
+                    let head = self.let_in_expr(scope, ast_heap, atoms, symbol_table)?;
                     let new_map_id = ast_heap.make_list_node(head_atom, head, tail_atom);
                     let curr_map = if let Ast::Map(map) = ast_heap.get_mut(curr_id).unwrap() {
                         map
@@ -296,7 +305,7 @@ impl Parser {
                 Ok(retval)
             }
         } else if let Some(_token) = self.accept(TokenKind::LeftParen) {
-            let retval = self.tuple_expr(ast_heap, atoms, scope)?;
+            let retval = self.tuple_expr(scope, ast_heap, atoms, symbol_table)?;
             let _ = self.expect(TokenKind::RightParen)?;
             Ok(retval)
         } else {

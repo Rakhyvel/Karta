@@ -63,17 +63,18 @@ use ast::AstHeap;
 use atom::AtomMap;
 use parser::Parser;
 use query::KartaQuery;
-use scope::Scope;
+use scope::{ScopeId, SymbolTable};
 
 /// Represents a file after being parsed
 pub struct KartaFile {
     /// Maps atom string representations to their atom id
     atoms: Arc<Mutex<AtomMap>>,
-    /// The AstHeap ID of the root AST expression for this karta file
-    // root: AstId,
-    root: Arc<Mutex<Scope>>,
     /// Heap of all Asts, can be accessed with an AstId
     ast_heap: Arc<Mutex<AstHeap>>,
+    /// Symbol table for this file, which maps identifiers to their Asts for a given context
+    symbol_table: Arc<Mutex<SymbolTable>>,
+    /// The AstHeap ID of the root AST expression for this karta file
+    root: ScopeId,
 }
 
 impl KartaFile {
@@ -84,15 +85,23 @@ impl KartaFile {
         let mut atoms = AtomMap::new();
 
         let mut ast_heap = AstHeap::new(&mut atoms);
+        let mut symbol_table = SymbolTable::new();
 
         let mut parser = Parser::new();
-        let root = Scope::new(None);
-        parser.parse(file_contents, &mut ast_heap, &mut atoms, &root)?;
+        let root = symbol_table.new_scope(None);
+        parser.parse(
+            file_contents,
+            root,
+            &mut ast_heap,
+            &mut atoms,
+            &mut symbol_table,
+        )?;
 
         Ok(Self {
             ast_heap: Arc::new(Mutex::new(ast_heap)),
             atoms: Arc::new(Mutex::new(atoms)),
             root,
+            symbol_table: Arc::new(Mutex::new(symbol_table)),
         })
     }
 
@@ -110,14 +119,16 @@ impl KartaFile {
         let result = {
             let mut ast_heap = self.ast_heap.try_lock().unwrap();
             let mut atoms = self.atoms.try_lock().unwrap();
+            let mut symbol_table = self.symbol_table.try_lock().unwrap();
 
             let expr_ast = parser.parse_expr(
                 String::from(expr_str),
+                self.root,
                 &mut ast_heap,
                 &mut atoms,
-                &self.root,
+                &mut symbol_table,
             )?;
-            ast_heap.eval(expr_ast, &self.root, &atoms)?
+            ast_heap.eval(expr_ast, self.root, &atoms, &mut symbol_table)?
         };
 
         Ok(KartaQuery::new(self, result))
@@ -287,6 +298,17 @@ in (@add (x, y))
         let kartra_file = KartaFile::new("test = (\\x -> @add(x, 4))")?;
 
         let res: i64 = kartra_file.eval("test 5")?.as_int()?;
+
+        assert_eq!(res, 9);
+
+        Ok(())
+    }
+
+    #[test]
+    fn curry() -> Result<(), String> {
+        let kartra_file = KartaFile::new("test = (\\x -> (\\y -> @add(x, y)))")?;
+
+        let res: i64 = kartra_file.eval("(test 5) 4")?.as_int()?;
 
         assert_eq!(res, 9);
 

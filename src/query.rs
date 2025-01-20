@@ -5,7 +5,7 @@ use crate::{
 };
 
 #[derive(Clone)]
-/// A struct representing a query over a Karta file and it's intermediate result
+/// A struct representing a query over a Karta file and its intermediate result
 pub struct KartaQuery<'a> {
     /// The Karta file that this query is over
     file: &'a KartaFile,
@@ -22,7 +22,7 @@ impl<'a> KartaQuery<'a> {
         }
     }
 
-    /// Return a new query with it's result being the result of applying the atom to the current result.
+    /// Return a new query with its result being the result of applying the atom to the current result.
     /// The result becomes an error if applied to a non-map, or if the previous result was errant.
     pub fn get(mut self, field: AtomKind) -> Self {
         let current_result = match self.current_result {
