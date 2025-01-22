@@ -275,10 +275,14 @@ impl Parser {
                     Ast::Char(c) => atoms.put_atoms_in_set(AtomKind::Char(c)),
                     _ => return Err(String::from("cannot use this as a key")),
                 };
-                let _ = self.expect(TokenKind::Assign)?;
-                let value = self.let_in_expr(scope, ast_heap, atoms, symbol_table)?;
-
-                children.insert(key, value);
+                if let Some(_token) = self.accept(TokenKind::Assign) {
+                    // Map field, parse and insert value
+                    let value = self.let_in_expr(scope, ast_heap, atoms, symbol_table)?;
+                    children.insert(key, value);
+                } else {
+                    // Set field, insert `.t` as the value
+                    children.insert(key, ast_heap.truthy_id);
+                }
 
                 if self.accept(TokenKind::Comma).is_none() {
                     break;

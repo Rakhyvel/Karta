@@ -55,7 +55,7 @@ impl AstHeap {
         retval.nil_id = retval.create_atom(nil_atom_id);
 
         let truthy_id = atoms.put_atoms_in_set(AtomKind::NamedAtom(String::from(".t")));
-        retval.nil_id = retval.create_atom(truthy_id);
+        retval.truthy_id = retval.create_atom(truthy_id);
 
         let empty_map = HashMap::new();
         retval.empty_map_id = retval.create_map(empty_map);

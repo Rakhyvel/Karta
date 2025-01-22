@@ -61,6 +61,7 @@ impl AstHeap {
 
                 match functor {
                     Ast::Map(hash_map) => {
+                        self.println_ast_id(&eval_functor_id, atoms);
                         let atom_id = match arg {
                             Ast::Atom(atom_id) => atom_id,
                             Ast::Int(n) => atoms.get(AtomKind::Int(*n)).unwrap(),

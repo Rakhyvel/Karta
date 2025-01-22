@@ -21,29 +21,27 @@
 //!     - ()
 //! - [x] ! Add `let` ... `in`
 //! - [x] ! Simplify operators to be prefix only!
-//! - [x] ! map get, unions, intersection, difference
+//! - [ ] ! map get
 //! - [x] ! map keys besides atoms
 //! - [x] ! tuples
 //! - [x] ! Add builtin functions
 //! - [x] ! Add lambdas
-//! - [ ] ! if then else
-//! - [ ] ! imports
-//! - [ ] Laziness
-//! - [ ] String interpolation
-//! - [ ] Implement REPL
-//! - [ ] Add `where`
+//! - [x] ! if then else
 //! - [ ] Sets
-//! - [ ] Add partial application of functions
-//!     - [ ] `\` for anonymous functions
-//! - [ ] Add pattern matching to function
+//! - [ ] Add pattern matching to functions
+//!     - [ ] Laziness
+//!     - [ ] `f x y = z` => `f = \x -> \y -> z`
+//!     - [ ] list, tuple, map, set destructuring
 //!     - [ ] Add `match` ... `with`
-//!     - [ ] Exten union, difference, intersection operators to all functors
+//!     - [ ] Extend union, difference, intersection operators to all functors
 //!     - [ ] Add type predicate matching
+//! - [ ] ! imports
 //! - [ ] Add multi-method overloads
+//! - [ ] Implement REPL
+//! - [ ] String interpolation
+//! - [ ] unions, intersection, difference
+//! - [ ] Add `where`
 //! - [ ] `$` for parens until end of line
-//! - [ ] #[attributes] and `attrib` to get a list of things in a file that have that attribute?
-//! - [ ] `do` notation
-//! - [ ] `!` denotes side-effects, or maybe strictness?
 
 pub mod ast;
 mod atom;
@@ -323,6 +321,17 @@ in (@add (x, y))
         let res: i64 = kartra_file.eval("(safe-div 100 4)")?.as_int()?;
 
         assert_eq!(res, 25);
+
+        Ok(())
+    }
+
+    #[test]
+    fn set() -> Result<(), String> {
+        let kartra_file = KartaFile::new("my-set = {0, 1, 2, 3}")?;
+
+        let res: bool = kartra_file.eval("my-set 2")?.truthy()?;
+
+        assert!(res);
 
         Ok(())
     }
