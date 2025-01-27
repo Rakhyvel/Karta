@@ -5,19 +5,20 @@ use crate::{
 };
 
 #[derive(Clone)]
-/// A struct representing a query over a Karta file and its intermediate result
+/// A struct representing a query over a Karta expression and its intermediate result. This allows the user to
+/// efficiently manipulate a result of a Karta computation.
 pub struct KartaQuery<'a> {
-    /// The Karta file that this query is over
-    file: &'a KartaContext,
+    /// The Karta context that this query is over
+    context: &'a KartaContext,
     /// The current, immediate result of this query.
     current_result: Result<AstId, String>,
 }
 
 impl<'a> KartaQuery<'a> {
-    /// Create a new query with a Karta file and current result set as the file's root.
-    pub(crate) fn new(file: &'a KartaContext, current_result: AstId) -> Self {
+    /// Create a new query within a Karta context, with a given working result.
+    pub(crate) fn new(context: &'a KartaContext, current_result: AstId) -> Self {
         Self {
-            file,
+            context,
             current_result: Ok(current_result),
         }
     }
@@ -30,8 +31,8 @@ impl<'a> KartaQuery<'a> {
             Err(_) => return self,
         };
 
-        let ast_heap = self.file.ast_heap();
-        let atoms = self.file.atoms();
+        let ast_heap = self.context.ast_heap();
+        let atoms = self.context.atoms();
 
         let root_ast = ast_heap
             .get(current_result)
@@ -54,12 +55,13 @@ impl<'a> KartaQuery<'a> {
     }
 
     /// Interpret the current result of this query as an integer.
-    /// Returns an error if the query result cannot be converted to an integer, or if any errors occured during the query process.
+    /// Returns an error if the query result cannot be converted to an integer, or if any errors occured during the
+    /// query process.
     pub fn as_int<T>(&self) -> Result<T, String>
     where
         T: From<i64>,
     {
-        let ast_heap = self.file.ast_heap();
+        let ast_heap = self.context.ast_heap();
 
         if let Ok(current_result) = self.current_result {
             let ast = ast_heap
@@ -82,7 +84,7 @@ impl<'a> KartaQuery<'a> {
     where
         T: From<f64>,
     {
-        let ast_heap = self.file.ast_heap();
+        let ast_heap = self.context.ast_heap();
 
         if let Ok(current_result) = self.current_result {
             let ast = ast_heap
@@ -101,7 +103,7 @@ impl<'a> KartaQuery<'a> {
     /// Interpret the current result of this query as a string.
     /// Returns an error if the query result cannot be converted to a string, or if any errors occured during the query process.
     pub fn as_string(&self) -> Result<String, String> {
-        let ast_heap = self.file.ast_heap();
+        let ast_heap = self.context.ast_heap();
         if let Ok(current_result) = self.current_result {
             let ast = ast_heap
                 .get(current_result)
@@ -118,7 +120,7 @@ impl<'a> KartaQuery<'a> {
     /// Whether or not the current result of this query is truthy (ie not the .nil atom).
     /// Propagates any errors that may have occured during the query process.
     pub fn truthy(&self) -> Result<bool, String> {
-        let ast_heap = self.file.ast_heap();
+        let ast_heap = self.context.ast_heap();
 
         if let Ok(current_result) = self.current_result {
             let ast = ast_heap
@@ -140,7 +142,7 @@ impl<'a> KartaQuery<'a> {
     }
 
     fn is_empty_map(&self) -> Result<bool, String> {
-        let ast_heap = self.file.ast_heap();
+        let ast_heap = self.context.ast_heap();
 
         if let Ok(current_result) = self.current_result {
             let ast = ast_heap

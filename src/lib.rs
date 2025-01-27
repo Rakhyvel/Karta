@@ -21,13 +21,13 @@
 //!     - ()
 //! - [x] ! Add `let` ... `in`
 //! - [x] ! Simplify operators to be prefix only!
-//! - [ ] ! map get
+//! - [x] ! map get
 //! - [x] ! map keys besides atoms
 //! - [x] ! tuples
 //! - [x] ! Add builtin functions
 //! - [x] ! Add lambdas
 //! - [x] ! if then else
-//! - [ ] ! imports
+//! - [x] ! imports
 //!     * KartaContext, which contains a string map to module ids, and a vault of the actual modules themselves
 //!     * User calls `KartaContext::import(&mut self, module_name, path)` to compile and assign the context
 //!     * The modules are added in the root scope of the context, and are assigned to maps of the bindings
@@ -68,20 +68,20 @@ use parser::Parser;
 use query::KartaQuery;
 use scope::{ScopeId, SymbolTable};
 
-/// Represents a file after being parsed
+/// Represents the context for evaluating Karta files and expressions
 pub struct KartaContext {
     /// Maps atom string representations to their atom id
     atoms: Arc<Mutex<AtomMap>>,
     /// Heap of all Asts, can be accessed with an AstId
     ast_heap: Arc<Mutex<AstHeap>>,
-    /// Symbol table for this file, which maps identifiers to their Asts for a given context
+    /// Symbol table for this context, which maps identifiers to their Asts for a given context
     symbol_table: Arc<Mutex<SymbolTable>>,
-    /// The AstHeap ID of the root AST expression for this karta file
+    /// The AstHeap ID of the root AST expression for this karta context
     root: ScopeId,
 }
 
 impl KartaContext {
-    /// Create and parse a new Karta file from file contents. Returns an error if tokenization or parsing fails.
+    /// Creates a new Karta Context, or a string is any errors occured
     pub fn new() -> Result<Self, String> {
         let mut atoms = AtomMap::new();
 
@@ -98,15 +98,16 @@ impl KartaContext {
         })
     }
 
-    /// Appends a file to the root
-    pub fn import_file(&mut self, _module_name: String, filename: String) -> Result<(), String> {
+    /// Amends a module with the bindings in a file
+    pub fn import_file(&mut self, module_name: String, filename: String) -> Result<(), String> {
         let file_contents: String = match fs::read_to_string(filename) {
             Ok(c) => c,
             Err(x) => return Err(x.to_string()),
         };
-        self.import(_module_name, file_contents)
+        self.import(module_name, file_contents)
     }
 
+    /// Amends a module with the bindings in a string
     pub fn import(
         &mut self,
         module_name: impl ToString,
@@ -135,6 +136,7 @@ impl KartaContext {
         Ok(())
     }
 
+    /// Constructs a new query from an expression, to be evaluated within the context constructed so far
     pub fn eval(&self, expr_str: &str) -> Result<KartaQuery, String> {
         let mut parser = Parser::new();
         let result = {
@@ -155,12 +157,12 @@ impl KartaContext {
         Ok(KartaQuery::new(self, result))
     }
 
-    /// The Ast Heap of this Karta file
+    /// The Ast Heap of this Karta context
     pub(crate) fn ast_heap(&self) -> std::sync::MutexGuard<'_, AstHeap> {
         self.ast_heap.try_lock().unwrap() // Automatically unlocks when it goes out of scope
     }
 
-    /// The atoms map for this Karta file
+    /// The atoms map for this Karta context
     pub(crate) fn atoms(&self) -> std::sync::MutexGuard<'_, AtomMap> {
         self.atoms.try_lock().unwrap() // Automatically unlocks when it goes out of scope
     }
@@ -286,9 +288,9 @@ in (@add (x, y))
 
     #[test]
     fn integer_map_keys() -> Result<(), String> {
-        let kartra_file = KartaContext::new()?;
+        let kctx = KartaContext::new()?;
 
-        let res: i64 = kartra_file.eval("{0 = 23} 0")?.as_int()?;
+        let res: i64 = kctx.eval("{0 = 23} 0")?.as_int()?;
 
         assert_eq!(res, 23);
         Ok(())
@@ -296,9 +298,9 @@ in (@add (x, y))
 
     #[test]
     fn tuples() -> Result<(), String> {
-        let kartra_file = KartaContext::new()?;
+        let kctx = KartaContext::new()?;
 
-        let res: i64 = kartra_file.eval("(1, 2, 3, 4) 2")?.as_int()?;
+        let res: i64 = kctx.eval("(1, 2, 3, 4) 2")?.as_int()?;
 
         assert_eq!(res, 3);
         Ok(())
@@ -306,9 +308,9 @@ in (@add (x, y))
 
     #[test]
     fn lambdas() -> Result<(), String> {
-        let kartra_file = KartaContext::new()?;
+        let kctx = KartaContext::new()?;
 
-        let res: i64 = kartra_file.eval("(\\x -> @add(x, 4)) 5")?.as_int()?;
+        let res: i64 = kctx.eval("(\\x -> @add(x, 4)) 5")?.as_int()?;
 
         assert_eq!(res, 9);
         Ok(())
@@ -316,9 +318,9 @@ in (@add (x, y))
 
     #[test]
     fn curry() -> Result<(), String> {
-        let kartra_file = KartaContext::new()?;
+        let kctx = KartaContext::new()?;
 
-        let res: i64 = kartra_file
+        let res: i64 = kctx
             .eval("let + = \\x -> \\y -> @add (x, y) in (+ 5 4)")?
             .as_int()?;
 
@@ -328,9 +330,9 @@ in (@add (x, y))
 
     #[test]
     fn if_then_else() -> Result<(), String> {
-        let kartra_file = KartaContext::new()?;
+        let kctx = KartaContext::new()?;
 
-        let res: i64 = kartra_file.eval("let safe-div = \\x -> \\y -> if @eql(y, 0) then .inf else @div(x, y) in (safe-div 100 4)")?.as_int()?;
+        let res: i64 = kctx.eval("let safe-div = \\x -> \\y -> if @eql(y, 0) then .inf else @div(x, y) in (safe-div 100 4)")?.as_int()?;
 
         assert_eq!(res, 25);
         Ok(())
@@ -338,9 +340,9 @@ in (@add (x, y))
 
     #[test]
     fn set() -> Result<(), String> {
-        let kartra_file = KartaContext::new()?;
+        let kctx = KartaContext::new()?;
 
-        let res: bool = kartra_file.eval("{0, 1, 2, 3} 2")?.truthy()?;
+        let res: bool = kctx.eval("{0, 1, 2, 3} 2")?.truthy()?;
 
         assert!(res);
         Ok(())

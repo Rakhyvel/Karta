@@ -32,7 +32,7 @@ impl SymbolTable {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-/// Unique identifier of an Ast expression in the file's vector of Asts
+/// Unique identifier of an Ast expression in the symbol table
 pub struct ScopeId(usize);
 
 impl ScopeId {

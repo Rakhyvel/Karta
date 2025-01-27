@@ -50,7 +50,7 @@ impl AtomMap {
 }
 
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
-/// Unique identifier of an Atom in the file's vector of Atoms
+/// Unique identifier of an Atom in the context's vector of Atoms
 pub struct AtomId(usize);
 
 impl AtomId {

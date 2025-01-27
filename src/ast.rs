@@ -13,7 +13,7 @@ type EvalFn = for<'a, 'b, 'c> fn(
     &'c mut SymbolTable,
 ) -> Result<AstId, String>;
 
-/// Contains the ASTs used in a Karta file
+/// Contains the ASTs used in a Karta context
 pub(crate) struct AstHeap {
     asts: Vec<Ast>,
 
@@ -236,7 +236,7 @@ impl AstHeap {
 }
 
 #[derive(Copy, Clone, Debug)]
-/// Unique identifier of an Ast expression in the file's vector of Asts
+/// Unique identifier of an Ast expression in the context's vector of Asts
 pub struct AstId(usize);
 
 impl AstId {
@@ -258,7 +258,7 @@ impl Display for AstId {
 }
 
 #[derive(Debug, Clone)]
-/// Represents an expression in the Karta file
+/// Represents an expression in the Karta program
 pub(crate) enum Ast {
     /// A basic integer
     Int(i64),
@@ -276,7 +276,7 @@ pub(crate) enum Ast {
     Closure(String, AstId, ScopeId),
     /// A builtin function
     BuiltinFunction(AtomId),
-    /// Maps AtomId's to an Ast within the file
+    /// Maps AtomId's to an Ast within the context
     Map(HashMap<AtomId, AstId>),
     /// Just a scope for the file
     File(ScopeId),
