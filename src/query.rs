@@ -1,21 +1,21 @@
 use crate::{
     ast::{Ast, AstId},
     atom::AtomKind,
-    KartaFile,
+    KartaContext,
 };
 
 #[derive(Clone)]
 /// A struct representing a query over a Karta file and its intermediate result
 pub struct KartaQuery<'a> {
     /// The Karta file that this query is over
-    file: &'a KartaFile,
+    file: &'a KartaContext,
     /// The current, immediate result of this query.
     current_result: Result<AstId, String>,
 }
 
 impl<'a> KartaQuery<'a> {
     /// Create a new query with a Karta file and current result set as the file's root.
-    pub(crate) fn new(file: &'a KartaFile, current_result: AstId) -> Self {
+    pub(crate) fn new(file: &'a KartaContext, current_result: AstId) -> Self {
         Self {
             file,
             current_result: Ok(current_result),

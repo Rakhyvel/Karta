@@ -12,7 +12,7 @@ impl AstHeap {
         &mut self,
         root: AstId,
         scope: ScopeId,
-        atoms: &AtomMap,
+        atoms: &mut AtomMap,
         symbols: &mut SymbolTable,
     ) -> Result<AstId, String> {
         let ast = self.get(root).unwrap().clone();
@@ -24,6 +24,7 @@ impl AstHeap {
             | Ast::String(_)
             | Ast::Atom(_)
             | Ast::BuiltinFunction(_)
+            | Ast::File(_)
             | Ast::Closure(_, _, _) => Ok(root),
             Ast::Lambda(arg_name, expr) => Ok(self.create_closure(arg_name, expr, scope)),
             Ast::Map(hash_map) => {
@@ -75,6 +76,22 @@ impl AstHeap {
                         let value_id = hash_map.get(atom_id).unwrap();
                         Ok(self.eval(*value_id, scope, atoms, symbols)?)
                     }
+                    Ast::File(file_scope_id) => {
+                        let atom_id = match arg {
+                            Ast::Atom(atom_id) => atom_id,
+                            _ => {
+                                self.println_ast_id(&eval_functor_id, atoms);
+                                self.println_ast_id(&eval_arg_id, atoms);
+                                return Err(format!("cannot apply those ^"));
+                            }
+                        };
+                        let atom_name = atoms.string_from_atom(*atom_id).unwrap();
+                        let value_atom =
+                            atoms.put_atoms_in_set(AtomKind::NamedAtom(atom_name[1..].to_string()));
+                        let file_scope_id = *file_scope_id;
+                        let value_id = self.create_identifier(value_atom);
+                        Ok(self.eval(value_id, file_scope_id, atoms, symbols)?)
+                    }
                     Ast::BuiltinFunction(atom_id) => {
                         let name = atoms.string_from_atom(*atom_id).unwrap();
                         let bif = self.builtin_function_methods.get(&name).unwrap();
@@ -106,7 +123,7 @@ impl AstHeap {
         &mut self,
         tuple_id: AstId,
         scope: ScopeId,
-        atoms: &AtomMap,
+        atoms: &mut AtomMap,
         symbols: &mut SymbolTable,
     ) -> Result<AstId, String> {
         let (lhs_id, rhs_id) = self.get_pair(tuple_id, scope, atoms, symbols)?;
@@ -119,7 +136,7 @@ impl AstHeap {
         &mut self,
         tuple_id: AstId,
         scope: ScopeId,
-        atoms: &AtomMap,
+        atoms: &mut AtomMap,
         symbols: &mut SymbolTable,
     ) -> Result<AstId, String> {
         let (lhs_id, rhs_id) = self.get_pair(tuple_id, scope, atoms, symbols)?;
@@ -132,7 +149,7 @@ impl AstHeap {
         &mut self,
         expr_id: AstId,
         scope: ScopeId,
-        atoms: &AtomMap,
+        atoms: &mut AtomMap,
         symbols: &mut SymbolTable,
     ) -> Result<AstId, String> {
         let value = !self.truthy(expr_id, scope, atoms, symbols)?;
@@ -143,7 +160,7 @@ impl AstHeap {
         &mut self,
         ast_id: AstId,
         scope: ScopeId,
-        atoms: &AtomMap,
+        atoms: &mut AtomMap,
         symbols: &mut SymbolTable,
     ) -> Result<bool, String> {
         let evald_id = self.eval(ast_id, scope, atoms, symbols)?;
@@ -158,7 +175,7 @@ impl AstHeap {
         &mut self,
         tuple_id: AstId,
         scope: ScopeId,
-        atoms: &AtomMap,
+        atoms: &mut AtomMap,
         symbols: &mut SymbolTable,
     ) -> Result<AstId, String> {
         let (lhs_id, rhs_id) = self.get_pair(tuple_id, scope, atoms, symbols)?;
@@ -175,7 +192,7 @@ impl AstHeap {
         &mut self,
         tuple_id: AstId,
         scope: ScopeId,
-        atoms: &AtomMap,
+        atoms: &mut AtomMap,
         symbols: &mut SymbolTable,
     ) -> Result<AstId, String> {
         let (lhs_id, rhs_id) = self.get_pair(tuple_id, scope, atoms, symbols)?;
@@ -192,7 +209,7 @@ impl AstHeap {
         &mut self,
         tuple_id: AstId,
         scope: ScopeId,
-        atoms: &AtomMap,
+        atoms: &mut AtomMap,
         symbols: &mut SymbolTable,
     ) -> Result<AstId, String> {
         let (lhs_id, rhs_id) = self.get_pair(tuple_id, scope, atoms, symbols)?;
@@ -208,7 +225,7 @@ impl AstHeap {
         &mut self,
         tuple_id: AstId,
         scope: ScopeId,
-        atoms: &AtomMap,
+        atoms: &mut AtomMap,
         symbols: &mut SymbolTable,
     ) -> Result<AstId, String> {
         let (lhs_id, rhs_id) = self.get_pair(tuple_id, scope, atoms, symbols)?;
@@ -224,7 +241,7 @@ impl AstHeap {
         &mut self,
         tuple_id: AstId,
         scope: ScopeId,
-        atoms: &AtomMap,
+        atoms: &mut AtomMap,
         symbols: &mut SymbolTable,
     ) -> Result<AstId, String> {
         let (lhs_id, rhs_id) = self.get_pair(tuple_id, scope, atoms, symbols)?;
@@ -240,7 +257,7 @@ impl AstHeap {
         &mut self,
         tuple_id: AstId,
         scope: ScopeId,
-        atoms: &AtomMap,
+        atoms: &mut AtomMap,
         symbols: &mut SymbolTable,
     ) -> Result<AstId, String> {
         let (lhs_id, rhs_id) = self.get_pair(tuple_id, scope, atoms, symbols)?;
@@ -256,7 +273,7 @@ impl AstHeap {
         &mut self,
         tuple_id: AstId,
         scope: ScopeId,
-        atoms: &AtomMap,
+        atoms: &mut AtomMap,
         symbols: &mut SymbolTable,
     ) -> Result<AstId, String> {
         let (lhs_id, rhs_id) = self.get_pair(tuple_id, scope, atoms, symbols)?;
@@ -272,7 +289,7 @@ impl AstHeap {
         &mut self,
         tuple_id: AstId,
         scope: ScopeId,
-        atoms: &AtomMap,
+        atoms: &mut AtomMap,
         symbols: &mut SymbolTable,
     ) -> Result<AstId, String> {
         let (lhs_id, rhs_id) = self.get_pair(tuple_id, scope, atoms, symbols)?;
@@ -288,7 +305,7 @@ impl AstHeap {
         &mut self,
         tuple_id: AstId,
         scope: ScopeId,
-        atoms: &AtomMap,
+        atoms: &mut AtomMap,
         symbols: &mut SymbolTable,
     ) -> Result<AstId, String> {
         let (lhs_id, rhs_id) = self.get_pair(tuple_id, scope, atoms, symbols)?;
@@ -304,7 +321,7 @@ impl AstHeap {
         &mut self,
         tuple_id: AstId,
         scope: ScopeId,
-        atoms: &AtomMap,
+        atoms: &mut AtomMap,
         symbols: &mut SymbolTable,
     ) -> Result<AstId, String> {
         let (lhs_id, rhs_id) = self.get_pair(tuple_id, scope, atoms, symbols)?;
@@ -320,7 +337,7 @@ impl AstHeap {
         &mut self,
         tuple_id: AstId,
         scope: ScopeId,
-        atoms: &AtomMap,
+        atoms: &mut AtomMap,
         symbols: &mut SymbolTable,
     ) -> Result<AstId, String> {
         let (lhs_id, rhs_id) = self.get_pair(tuple_id, scope, atoms, symbols)?;
@@ -335,7 +352,7 @@ impl AstHeap {
         &mut self,
         expr_id: AstId,
         scope: ScopeId,
-        atoms: &AtomMap,
+        atoms: &mut AtomMap,
         symbols: &mut SymbolTable,
     ) -> Result<AstId, String> {
         let evald_expr = self.eval(expr_id, scope, atoms, symbols)?;
@@ -359,7 +376,7 @@ impl AstHeap {
         &mut self,
         tuple_id: AstId,
         scope: ScopeId,
-        atoms: &AtomMap,
+        atoms: &mut AtomMap,
         symbols: &mut SymbolTable,
     ) -> Result<(AstId, AstId), String> {
         let zero = self.create_int(0);
@@ -379,7 +396,7 @@ impl AstHeap {
         lhs_id: AstId,
         rhs_id: AstId,
         scope: ScopeId,
-        atoms: &AtomMap,
+        atoms: &mut AtomMap,
         symbols: &mut SymbolTable,
     ) -> Result<(AstId, AstId), String> {
         let evald_lhs = self.eval(lhs_id, scope, atoms, symbols)?;

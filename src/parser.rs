@@ -24,19 +24,25 @@ impl Parser {
     }
 
     /// Parses file contents into Asts and atoms
-    pub(crate) fn parse(
+    ///
+    /// #### Parameters
+    /// - `scope`: The scope of the module, to be filled in with the bindings in the file
+    ///
+    /// ### Returns
+    /// Returns the File Ast for this file
+    pub(crate) fn parse_file(
         &mut self,
         file_contents: String,
         scope: ScopeId,
         ast_heap: &mut AstHeap,
         atoms: &mut AtomMap,
         symbol_table: &mut SymbolTable,
-    ) -> Result<(), String> {
+    ) -> Result<AstId, String> {
         self.get_tokens(file_contents);
 
         self.parse_bindings(scope, TokenKind::EndOfFile, ast_heap, atoms, symbol_table)?;
 
-        Ok(())
+        Ok(ast_heap.create_file(scope))
     }
 
     pub(crate) fn parse_expr(

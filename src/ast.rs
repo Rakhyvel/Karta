@@ -9,7 +9,7 @@ type EvalFn = for<'a, 'b, 'c> fn(
     &'a mut AstHeap,
     AstId,
     ScopeId,
-    &'b AtomMap,
+    &'b mut AtomMap,
     &'c mut SymbolTable,
 ) -> Result<AstId, String>;
 
@@ -100,6 +100,10 @@ impl AstHeap {
         self.insert(Ast::Map(value))
     }
 
+    pub(crate) fn create_file(&mut self, scope: ScopeId) -> AstId {
+        self.insert(Ast::File(scope))
+    }
+
     pub(crate) fn create_let(&mut self, scope: ScopeId, expr: AstId) -> AstId {
         self.insert(Ast::Let(scope, expr))
     }
@@ -177,6 +181,8 @@ impl AstHeap {
                 AtomKind::Int(n) => print!("{}", n),
                 AtomKind::Char(c) => print!("\'{}\'", c),
             },
+
+            Ast::File(_) => print!("<file>"),
 
             Ast::Map(hash_map) => {
                 print!("{{");
@@ -272,6 +278,8 @@ pub(crate) enum Ast {
     BuiltinFunction(AtomId),
     /// Maps AtomId's to an Ast within the file
     Map(HashMap<AtomId, AstId>),
+    /// Just a scope for the file
+    File(ScopeId),
 
     Let(ScopeId, AstId),
     Identifier(AtomId),
