@@ -40,6 +40,8 @@ impl Parser {
     ) -> Result<AstId, String> {
         self.get_tokens(file_contents);
 
+        while let Some(_) = self.accept(TokenKind::Newline) {}
+
         self.parse_bindings(scope, TokenKind::EndOfFile, ast_heap, atoms, symbol_table)?;
 
         Ok(ast_heap.create_file(scope))
@@ -63,9 +65,9 @@ impl Parser {
         let _ = tokenizer.tokenize(&mut self.tokens).unwrap();
         layout::layout(&mut self.tokens);
 
-        // for token in &self.tokens {
-        //     println!("{:?}({}) ", token.kind, token.data)
-        // }
+        for token in &self.tokens {
+            println!("{:?}({}) ", token.kind, token.data)
+        }
     }
 
     /// Returns the token at the begining of the stream without removing it
@@ -132,15 +134,79 @@ impl Parser {
         symbol_table: &mut SymbolTable,
     ) -> Result<(), String> {
         while self.peek().kind != end_kind {
+            // Parse the name of this binding
             let identifier = self.expect(TokenKind::Identifier)?.clone();
-            let _ = self.expect(TokenKind::Assign)?;
-            let value = self.let_in_expr(scope, ast_heap, atoms, symbol_table)?;
 
-            let _ = self.accept(TokenKind::Newline);
+            // Parse patterns into a list of args before the `=`
+            let mut args = vec![];
+            while let None = self.accept(TokenKind::Assign) {
+                args.push(self.expr(scope, ast_heap, atoms, symbol_table)?);
+            }
+
+            // Parse the RHS after the `=`
+            let mut value = self.let_in_expr(scope, ast_heap, atoms, symbol_table)?;
+            while let Some(_) = self.accept(TokenKind::Newline) {}
+
+            // Modify the RHS based on the pattern
+            while args.len() > 0 {
+                let arg_id = args.pop().unwrap();
+                let arg_ast = ast_heap.get(arg_id).unwrap();
+                match arg_ast {
+                    Ast::Identifier(name) => {
+                        let name_str = atoms.string_from_atom(*name).unwrap();
+                        value = ast_heap.create_lambda(name_str, value)
+                    }
+                    Ast::Int(_int_value) => {
+                        let random_name = String::from("this is pretty random!");
+                        value = ast_heap.create_lambda(random_name, value)
+                    }
+                    _ => panic!("no! {:?}", arg_ast),
+                }
+            }
 
             let key = atoms.put_atoms_in_set(AtomKind::NamedAtom(String::from(&identifier.data)));
 
-            symbol_table.insert(scope, key, value);
+            let scope_ref = symbol_table.get_scope(scope);
+            if let Some(arity) = scope_ref.get_arity(key) {
+                // We've seen this def before
+                if arity != args.len() {
+                    panic!("arities don't match!")
+                } else if args.len() == 0 {
+                    panic!("can't redfine a constant!")
+                }
+                // Dive into the lambda chain's expr, get the if elif chain AST
+                let mut if_chain_id = scope_ref.get_def(key).unwrap();
+                loop {
+                    let if_chain_ast = ast_heap.get(if_chain_id).unwrap();
+                    match if_chain_ast {
+                        Ast::Lambda(_arg, expr) => if_chain_id = *expr,
+                        Ast::If(_, _) => break,
+                        _ => panic!("whoa! {:?}", if_chain_ast),
+                    }
+                }
+
+                // Modify it's cond list IN PLACE to insert a new pattern match chedk before the totality panic
+            } else {
+                // Haven't seen this def before in this scope, insert it!
+                symbol_table.insert(scope, key, args.len(), value);
+            }
+
+            // fib 0 = 0
+            // ; fib does not exist. create a lambda that takes in the arity number of arguments, and has an `if-elif-else` chain:
+            // ;   \arg0 -> if (== arg0 0) then 0 else (panic! "function `fib` is not total!")
+            // fib 1 = 1
+            // ; fib does exist. Modify the lambda expression's if statement:
+            // ;   \arg0 -> ... elif (== arg0 1) then 1 ...
+            // fib n = ...
+            // ; fib does exist. Modify the lambda expression's if statement:
+            // ;   \arg0 -> .. elif (.t) then ...
+
+            // ; arity MUST match!
+            // ; fib 0 4 = 5 ;=> ERROR!
+
+            // ; constants (defs with arity 0) don't need lambdas
+            // my-constant = 5
+            // ; my-constant does not exist. arity is 0. just create a def for it
         }
         Ok(())
     }
@@ -265,12 +331,20 @@ impl Parser {
                 Ok(ast_heap.create_identifier(atom_value))
             }
         } else if let Some(_token) = self.accept(TokenKind::If) {
+            let mut conds = vec![];
             let condition = self.let_in_expr(scope, ast_heap, atoms, symbol_table)?;
             let _ = self.expect(TokenKind::Then);
             let then = self.let_in_expr(scope, ast_heap, atoms, symbol_table)?;
+            conds.push((condition, then));
+            while self.accept(TokenKind::Elif).is_some() {
+                let condition = self.let_in_expr(scope, ast_heap, atoms, symbol_table)?;
+                let _ = self.expect(TokenKind::Then);
+                let then = self.let_in_expr(scope, ast_heap, atoms, symbol_table)?;
+                conds.push((condition, then));
+            }
             let _ = self.expect(TokenKind::Else);
             let else_ = self.let_in_expr(scope, ast_heap, atoms, symbol_table)?;
-            Ok(ast_heap.create_if(condition, then, else_))
+            Ok(ast_heap.create_if(conds, else_))
         } else if let Some(_token) = self.accept(TokenKind::LeftBrace) {
             let mut children: HashMap<AtomId, AstId> = HashMap::new();
             loop {

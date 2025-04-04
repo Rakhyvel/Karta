@@ -36,23 +36,8 @@ impl AstHeap {
             }
             Ast::Let(new_scope, expr) => self.eval(expr, new_scope, atoms, symbols),
             Ast::Identifier(id) => {
-                let mut curr_scope: Option<ScopeId> = Some(scope);
-                loop {
-                    if let Some(some_curr_scope) = curr_scope {
-                        let scope_ref = symbols.get_scope(some_curr_scope);
-
-                        if let Some(ast_id) = scope_ref.get(id) {
-                            return self.eval(ast_id, some_curr_scope, atoms, symbols);
-                        } else {
-                            curr_scope = scope_ref.parent();
-                        }
-                    } else {
-                        return Err(format!(
-                            "use of undefined identifier `{}`",
-                            atoms.string_from_atom(id).unwrap()
-                        ));
-                    }
-                }
+                let (def, def_scope_id) = symbols.lookup_ident(id, scope, atoms)?;
+                self.eval(def, def_scope_id, atoms, symbols)
             }
             Ast::Apply(functor_id, arg_id) => {
                 let eval_functor_id = self.eval(functor_id, scope, atoms, symbols)?;
@@ -100,7 +85,7 @@ impl AstHeap {
                     Ast::Closure(arg_name, expr_id, closure_scope) => {
                         let new_scope = symbols.new_scope(Some(*closure_scope));
                         let key = atoms.get(AtomKind::NamedAtom(arg_name.clone())).unwrap();
-                        symbols.insert(new_scope, *key, eval_arg_id);
+                        symbols.insert(new_scope, *key, 0, eval_arg_id);
                         self.eval(*expr_id, new_scope, atoms, symbols)
                     }
                     _ => {
@@ -109,12 +94,13 @@ impl AstHeap {
                     }
                 }
             }
-            Ast::If(cond_id, then_id, else_id) => {
-                if self.truthy(cond_id, scope, atoms, symbols)? {
-                    self.eval(then_id, scope, atoms, symbols)
-                } else {
-                    self.eval(else_id, scope, atoms, symbols)
+            Ast::If(cond_ids, else_id) => {
+                for (cond_id, then_id) in cond_ids {
+                    if self.truthy(cond_id, scope, atoms, symbols)? {
+                        return self.eval(then_id, scope, atoms, symbols);
+                    }
                 }
+                return self.eval(else_id, scope, atoms, symbols);
             }
         }
     }

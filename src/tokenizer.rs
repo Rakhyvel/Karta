@@ -85,11 +85,7 @@ impl Tokenizer {
 
                 // Atoms end when the next char isn't a valid atom character
                 TokenizerState::Atom
-                    if self.eof()
-                        || (!char.is_alphanumeric()
-                            && char != '_'
-                            && char != '-'
-                            && char != '?') =>
+                    if self.eof() || (char.is_whitespace() || self.char_is_singular(char)) =>
                 {
                     self.add_token(TokenKind::Atom, tokens)
                 }
@@ -215,7 +211,7 @@ enum TokenizerState {
 /// Represents a single piece of text in the file
 pub(crate) struct Token {
     /// Owning string representing the actual text data for this string
-    pub(crate) data: String, // TODO: Should figure out how to just use `&'a str` here.
+    pub(crate) data: String,
     /// What kind of token this is
     pub(crate) kind: TokenKind,
     /// Where in the file this token came from
@@ -246,6 +242,7 @@ pub(crate) enum TokenKind {
     In,
     If,
     Then,
+    Elif,
     Else,
     Dedent,
     Indent,
@@ -271,6 +268,7 @@ impl TokenKind {
             "in" => TokenKind::In,
             "if" => TokenKind::If,
             "then" => TokenKind::Then,
+            "elif" => TokenKind::Elif,
             "else" => TokenKind::Else,
             _ if str.chars().nth(0).unwrap() == '.' => TokenKind::Atom,
             _ if str.chars().nth(0).unwrap().is_digit(10) => TokenKind::Integer,

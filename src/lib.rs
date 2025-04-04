@@ -32,19 +32,20 @@
 //!     * User calls `KartaContext::import(&mut self, module_name, path)` to compile and assign the context
 //!     * The modules are added in the root scope of the context, and are assigned to maps of the bindings
 //!     * User calls `KartaContext::eval(&mut self, expr)`, using the context's module scope
-//! - [ ] ! core/prelude
+//! - [x] ! core/prelude
 //! - [x] Sets
-//! - [ ] Add pattern matching to functions
-//!     - [ ] Laziness
-//!     - [ ] `f x y = z` => `f = \x -> \y -> z`
-//!     - [ ] list, tuple, map, set destructuring
-//!     - [ ] Add `match` ... `with`
-//!     - [ ] Extend union, difference, intersection operators to all functors
-//!     - [ ] Add type predicate matching
+//! - [x] `f x y = z` => `f = \x -> \y -> z` (but also store the methods and their arity for overloading)
+//! - [ ] list patterns
+//! - [ ] tuple patterns
+//! - [ ] map & set patterns
+//! - [ ] unions, intersection, difference
+//! - [ ] Extend union, difference, intersection operators to all functors
+//! - [ ] Add type predicate matching
+//! - [ ] Add `match` ... `with`
+//! - [ ] Laziness
 //! - [ ] Add multi-method overloads
 //! - [ ] Implement REPL
 //! - [ ] String interpolation
-//! - [ ] unions, intersection, difference
 //! - [ ] Add `where`
 //! - [ ] `$` for parens until end of line
 
@@ -58,6 +59,7 @@ mod scope;
 mod tokenizer;
 
 use std::{
+    collections::HashMap,
     fs,
     sync::{Arc, Mutex},
 };
@@ -78,6 +80,7 @@ pub struct KartaContext {
     symbol_table: Arc<Mutex<SymbolTable>>,
     /// The AstHeap ID of the root AST expression for this karta context
     root: ScopeId,
+    modules: HashMap<String, ScopeId>,
 }
 
 impl KartaContext {
@@ -95,12 +98,17 @@ impl KartaContext {
             atoms: Arc::new(Mutex::new(atoms)),
             root,
             symbol_table: Arc::new(Mutex::new(symbol_table)),
+            modules: HashMap::new(),
         })
     }
 
     /// Amends a module with the bindings in a file
-    pub fn import_file(&mut self, module_name: String, filename: String) -> Result<(), String> {
-        let file_contents: String = match fs::read_to_string(filename) {
+    pub fn import_file(
+        &mut self,
+        module_name: impl ToString,
+        filename: impl ToString,
+    ) -> Result<(), String> {
+        let file_contents: String = match fs::read_to_string(filename.to_string()) {
             Ok(c) => c,
             Err(x) => return Err(x.to_string()),
         };
@@ -113,6 +121,7 @@ impl KartaContext {
         module_name: impl ToString,
         file_contents: impl ToString,
     ) -> Result<(), String> {
+        let module_name = module_name.to_string();
         let file_contents = file_contents.to_string();
 
         let mut parser = Parser::new();
@@ -121,17 +130,22 @@ impl KartaContext {
         let mut atoms = self.atoms.try_lock().unwrap();
         let mut symbol_table = self.symbol_table.try_lock().unwrap();
 
-        let file_root = symbol_table.new_scope(None);
+        if !self.modules.contains_key(&module_name) {
+            let new_scope = symbol_table.new_scope(None);
+            self.modules.insert(module_name.clone(), new_scope);
+        }
+        let file_root = self.modules.get(&module_name).unwrap();
+
         let file_ast = parser.parse_file(
             file_contents,
-            file_root,
+            *file_root,
             &mut ast_heap,
             &mut atoms,
             &mut symbol_table,
         )?;
 
         let module_atom = atoms.put_atoms_in_set(AtomKind::NamedAtom(module_name.to_string()));
-        symbol_table.insert(self.root, module_atom, file_ast);
+        symbol_table.insert(self.root, module_atom, 0, file_ast);
 
         Ok(())
     }
@@ -329,10 +343,34 @@ in (@add (x, y))
     }
 
     #[test]
+    fn function_def() -> Result<(), String> {
+        let kctx = KartaContext::new()?;
+
+        let res: i64 = kctx
+            .eval("let my-add x y = @add(x, y) in my-add 15 95")?
+            .as_int()?;
+
+        assert_eq!(res, 110);
+        Ok(())
+    }
+
+    #[test]
     fn if_then_else() -> Result<(), String> {
         let kctx = KartaContext::new()?;
 
         let res: i64 = kctx.eval("let safe-div = \\x -> \\y -> if @eql(y, 0) then .inf else @div(x, y) in (safe-div 100 4)")?.as_int()?;
+
+        assert_eq!(res, 25);
+        Ok(())
+    }
+
+    #[test]
+    fn elif_then_else() -> Result<(), String> {
+        let kctx = KartaContext::new()?;
+
+        let res: i64 = kctx
+            .eval("let x = 4 in if @eql(x, 0) then 0 elif @eql(x, 4) then 25 else 45")?
+            .as_int()?;
 
         assert_eq!(res, 25);
         Ok(())
@@ -356,6 +394,62 @@ in (@add (x, y))
         let res: i64 = kctx.eval("test.x")?.as_int()?;
 
         assert_eq!(res, 100);
+        Ok(())
+    }
+
+    #[test]
+    fn import_amend() -> Result<(), String> {
+        let mut kctx = KartaContext::new()?;
+
+        kctx.import("test", "x = 100")?;
+        kctx.import("test", "y = 10")?;
+        let res: i64 = kctx.eval("@add (test.x, test.y)")?.as_int()?;
+
+        assert_eq!(res, 110);
+        Ok(())
+    }
+
+    #[test]
+    fn import_core() -> Result<(), String> {
+        let mut kctx = KartaContext::new()?;
+
+        kctx.import_file("core", "core/core.k")?;
+        let res: i64 = kctx.eval("core.+ 65 45")?.as_int()?;
+
+        assert_eq!(res, 110);
+        Ok(())
+    }
+
+    #[test]
+    fn list_empty_pattern_match() -> Result<(), String> {
+        let mut kctx = KartaContext::new()?;
+
+        kctx.import_file("core", "core/core.k")?;
+        let res: i64 = kctx.eval("core.+ 65 45")?.as_int()?;
+
+        assert_eq!(res, 110);
+        Ok(())
+    }
+
+    #[test]
+    fn integer_pattern_match() -> Result<(), String> {
+        let kctx = KartaContext::new()?;
+
+        let res: i64 = kctx
+            .eval(
+                r#"let
+  even? 0 = .t
+  even? 1 = .f
+  even? n = 
+    if @lsr(n 0)
+    then even? (- 0 n)
+    else (- n 2)
+in even? (@neg 4)
+"#,
+            )?
+            .as_int()?;
+
+        assert_eq!(res, 110);
         Ok(())
     }
 }
