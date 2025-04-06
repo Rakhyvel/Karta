@@ -441,9 +441,9 @@ in (@add (x, y))
   even? 0 = .t
   even? 1 = .f
   even? n = 
-    if @lsr(n 0)
-    then even? (- 0 n)
-    else (- n 2)
+    if @lsr(n, 0)
+    then even? (@neg n)
+    else @sub(n, 2)
 in even? (@neg 4)
 "#,
             )?

@@ -106,21 +106,17 @@ impl Scope {
         self.get(key).and_then(|d| Some(d.def))
     }
 
-    pub(crate) fn get_arity(&self, key: AtomId) -> Option<usize> {
-        self.get(key).and_then(|d| Some(d.arity))
-    }
-
     pub(crate) fn parent(&self) -> Option<ScopeId> {
         self.parent
     }
 
-    fn get(&self, key: AtomId) -> Option<&Definition> {
+    pub(crate) fn get(&self, key: AtomId) -> Option<&Definition> {
         self.bindings.get(&key)
     }
 }
 
 #[derive(Debug, Clone)]
-struct Definition {
+pub(crate) struct Definition {
     arity: usize,
     def: AstId,
 }
@@ -128,5 +124,13 @@ struct Definition {
 impl Definition {
     fn new(arity: usize, def: AstId) -> Self {
         Self { arity, def }
+    }
+
+    pub(crate) fn arity(&self) -> usize {
+        self.arity
+    }
+
+    pub(crate) fn def(&self) -> AstId {
+        self.def
     }
 }

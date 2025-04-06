@@ -64,10 +64,6 @@ impl Parser {
         let mut tokenizer = Tokenizer::new(file_contents);
         let _ = tokenizer.tokenize(&mut self.tokens).unwrap();
         layout::layout(&mut self.tokens);
-
-        for token in &self.tokens {
-            println!("{:?}({}) ", token.kind, token.data)
-        }
     }
 
     /// Returns the token at the begining of the stream without removing it
@@ -78,7 +74,8 @@ impl Parser {
     /// Removes and returns the token at the begining of the stream
     fn pop(&mut self) -> &Token {
         self.cursor += 1;
-        &self.tokens[self.cursor - 1]
+        let retval = &self.tokens[self.cursor - 1];
+        retval
     }
 
     fn next_is_expr(&self) -> bool {
@@ -138,57 +135,116 @@ impl Parser {
             let identifier = self.expect(TokenKind::Identifier)?.clone();
 
             // Parse patterns into a list of args before the `=`
-            let mut args = vec![];
-            while let None = self.accept(TokenKind::Assign) {
-                args.push(self.expr(scope, ast_heap, atoms, symbol_table)?);
-            }
+            let args: Vec<AstId> = std::iter::from_fn(|| {
+                if self.accept(TokenKind::Assign).is_none() {
+                    Some(self.expr(scope, ast_heap, atoms, symbol_table).ok()?)
+                } else {
+                    None
+                }
+            })
+            .collect();
 
             // Parse the RHS after the `=`
-            let mut value = self.let_in_expr(scope, ast_heap, atoms, symbol_table)?;
+            let rhs_value = self.let_in_expr(scope, ast_heap, atoms, symbol_table)?;
             while let Some(_) = self.accept(TokenKind::Newline) {}
 
-            // Modify the RHS based on the pattern
-            while args.len() > 0 {
-                let arg_id = args.pop().unwrap();
-                let arg_ast = ast_heap.get(arg_id).unwrap();
-                match arg_ast {
-                    Ast::Identifier(name) => {
-                        let name_str = atoms.string_from_atom(*name).unwrap();
-                        value = ast_heap.create_lambda(name_str, value)
-                    }
-                    Ast::Int(_int_value) => {
-                        let random_name = String::from("this is pretty random!");
-                        value = ast_heap.create_lambda(random_name, value)
-                    }
-                    _ => panic!("no! {:?}", arg_ast),
-                }
-            }
-
-            let key = atoms.put_atoms_in_set(AtomKind::NamedAtom(String::from(&identifier.data)));
-
+            // Find the symbol
             let scope_ref = symbol_table.get_scope(scope);
-            if let Some(arity) = scope_ref.get_arity(key) {
-                // We've seen this def before
+            let key = atoms.put_atoms_in_set(AtomKind::NamedAtom(String::from(&identifier.data)));
+            let if_chain_id: AstId;
+            if let Some(symbol) = scope_ref.get(key) {
+                // symbol definition exists
+                let arity = symbol.arity();
+                // check that arity matches and isn't 0
                 if arity != args.len() {
                     panic!("arities don't match!")
                 } else if args.len() == 0 {
                     panic!("can't redfine a constant!")
                 }
                 // Dive into the lambda chain's expr, get the if elif chain AST
-                let mut if_chain_id = scope_ref.get_def(key).unwrap();
+                let mut symbol_def_id = symbol.def();
                 loop {
-                    let if_chain_ast = ast_heap.get(if_chain_id).unwrap();
-                    match if_chain_ast {
-                        Ast::Lambda(_arg, expr) => if_chain_id = *expr,
+                    let symbol_def_ast = ast_heap.get(symbol_def_id).unwrap();
+                    match symbol_def_ast {
+                        Ast::Lambda(_arg, expr) => symbol_def_id = *expr,
                         Ast::If(_, _) => break,
-                        _ => panic!("whoa! {:?}", if_chain_ast),
+                        _ => panic!("whoa! {:?}", symbol_def_ast),
                     }
                 }
-
-                // Modify it's cond list IN PLACE to insert a new pattern match chedk before the totality panic
+                if_chain_id = symbol_def_id;
             } else {
-                // Haven't seen this def before in this scope, insert it!
-                symbol_table.insert(scope, key, args.len(), value);
+                // symbol did not exist!
+                // create the lambda chain based on the args, starting with the empty if-else list
+                let panic_ast_id = ast_heap.create_panic();
+                if_chain_id = ast_heap.create_if(vec![], panic_ast_id);
+                let mut def = if_chain_id;
+                for i in 0..args.len() {
+                    let arg_name = format!("$arg{}", i);
+                    def = ast_heap.create_lambda(arg_name, def)
+                }
+                symbol_table.insert(scope, key, args.len(), def);
+            }
+
+            // Construct a list of pattern checks from the arguments
+            let pattern_conds: Vec<AstId> = args
+                .iter()
+                .enumerate()
+                .map(|(i, arg_id)| {
+                    let arg_ast = ast_heap.get(*arg_id).unwrap();
+                    let arg_name = format!("$arg{}", i);
+                    match arg_ast {
+                        Ast::Identifier(_) => ast_heap.truthy_id,
+                        Ast::Int(_) => {
+                            let eql_bif = ast_heap.create_builtin_function(
+                                atoms.put_atoms_in_set(AtomKind::NamedAtom(String::from("@eql"))),
+                            );
+                            let arg_name_atom_value =
+                                atoms.put_atoms_in_set(AtomKind::NamedAtom(arg_name));
+                            let arg_ident = ast_heap.create_identifier(arg_name_atom_value);
+                            let eql_args = ast_heap.make_tuple(vec![*arg_id, arg_ident], atoms);
+                            ast_heap.create_apply(eql_bif, eql_args)
+                        }
+                        _ => panic!("not a pattern!"),
+                    }
+                })
+                .collect();
+            // Conjunct the conditions
+            let cond: AstId = pattern_conds
+                .iter()
+                .copied()
+                .reduce(|acc: AstId, e: AstId| {
+                    let and_bif = ast_heap.create_builtin_function(
+                        atoms.put_atoms_in_set(AtomKind::NamedAtom(String::from("@and"))),
+                    );
+                    let and_args = ast_heap.make_tuple(vec![acc, e], atoms);
+                    ast_heap.create_apply(and_bif, and_args)
+                })
+                .unwrap();
+
+            // Construct the rhs, which may need to be modified to name arguments
+            let mut modified_rhs_value = rhs_value;
+            for (i, arg_id) in args.iter().enumerate() {
+                let anon_arg_name = format!("$arg{}", i);
+                let anon_arg_name_atom_value =
+                    atoms.put_atoms_in_set(AtomKind::NamedAtom(anon_arg_name));
+                let anon_arg_ident = ast_heap.create_identifier(anon_arg_name_atom_value);
+
+                let arg_ast = ast_heap.get(*arg_id).unwrap();
+                match arg_ast {
+                    Ast::Identifier(atom) => {
+                        let new_scope = symbol_table.new_scope(Some(scope));
+                        symbol_table.insert(new_scope, *atom, 0, anon_arg_ident);
+                        modified_rhs_value = ast_heap.create_let(new_scope, modified_rhs_value);
+                    }
+                    _ => {} // Leave rhs unchanged
+                }
+            }
+
+            // Put the pattern into the if chain
+            let if_chain_ast = ast_heap.get_mut(if_chain_id).unwrap();
+            match if_chain_ast {
+                Ast::If(conds, _else) => conds.push((cond, modified_rhs_value)),
+                _ => panic!("whoa!"),
             }
 
             // fib 0 = 0
@@ -200,6 +256,12 @@ impl Parser {
             // fib n = ...
             // ; fib does exist. Modify the lambda expression's if statement:
             // ;   \arg0 -> .. elif (.t) then ...
+            //
+            // 1. check to see if there is a definition
+            //   * if there is with a mismatch arity, that's an error
+            //   * if there is with an arity of 0, that's an error
+            //   * if there is no definition yet, construct the lambda chain and an empty if-else list
+            // 2. (there is a definition here now) construct the pattern match condition, and insert it
 
             // ; arity MUST match!
             // ; fib 0 4 = 5 ;=> ERROR!
@@ -220,17 +282,14 @@ impl Parser {
     ) -> Result<AstId, String> {
         let expr = self.let_in_expr(scope, ast_heap, atoms, symbol_table)?;
         if self.peek().kind == TokenKind::Comma {
-            let mut i: i64 = 0;
-            let mut children: HashMap<AtomId, AstId> = HashMap::new();
-            children.insert(atoms.put_atoms_in_set(AtomKind::Int(i)), expr);
+            let mut terms = vec![];
+            terms.push(expr);
 
             while let Some(_) = self.accept(TokenKind::Comma) {
-                i += 1;
-                let elem = self.let_in_expr(scope, ast_heap, atoms, symbol_table)?;
-                children.insert(atoms.put_atoms_in_set(AtomKind::Int(i)), elem);
+                terms.push(self.let_in_expr(scope, ast_heap, atoms, symbol_table)?);
             }
 
-            Ok(ast_heap.create_map(children))
+            Ok(ast_heap.make_tuple(terms, atoms))
         } else {
             Ok(expr)
         }
@@ -256,8 +315,9 @@ impl Parser {
                         atoms,
                         symbol_table,
                     )?;
+                    while let Some(_) = self.accept(TokenKind::Newline) {}
                     let _ = self.expect(TokenKind::Dedent)?;
-                    let _ = self.accept(TokenKind::Newline);
+                    while let Some(_) = self.accept(TokenKind::Newline) {}
                 } else {
                     self.parse_bindings(new_scope, TokenKind::In, ast_heap, atoms, symbol_table)?;
                 }
@@ -333,6 +393,7 @@ impl Parser {
         } else if let Some(_token) = self.accept(TokenKind::If) {
             let mut conds = vec![];
             let condition = self.let_in_expr(scope, ast_heap, atoms, symbol_table)?;
+            while let Some(_) = self.accept(TokenKind::Newline) {}
             let _ = self.expect(TokenKind::Then);
             let then = self.let_in_expr(scope, ast_heap, atoms, symbol_table)?;
             conds.push((condition, then));
@@ -342,6 +403,7 @@ impl Parser {
                 let then = self.let_in_expr(scope, ast_heap, atoms, symbol_table)?;
                 conds.push((condition, then));
             }
+            while let Some(_) = self.accept(TokenKind::Newline) {}
             let _ = self.expect(TokenKind::Else);
             let else_ = self.let_in_expr(scope, ast_heap, atoms, symbol_table)?;
             Ok(ast_heap.create_if(conds, else_))
@@ -398,6 +460,11 @@ impl Parser {
         } else if let Some(_token) = self.accept(TokenKind::LeftParen) {
             let retval = self.tuple_expr(scope, ast_heap, atoms, symbol_table)?;
             let _ = self.expect(TokenKind::RightParen)?;
+            Ok(retval)
+        } else if let Some(_token) = self.accept(TokenKind::Indent) {
+            let retval = self.lambda_expr(scope, ast_heap, atoms, symbol_table)?;
+            while let Some(_) = self.accept(TokenKind::Newline) {}
+            let _ = self.expect(TokenKind::Dedent)?;
             Ok(retval)
         } else {
             Err(self.parse_error(

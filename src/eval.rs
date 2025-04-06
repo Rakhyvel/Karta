@@ -15,6 +15,7 @@ impl AstHeap {
         atoms: &mut AtomMap,
         symbols: &mut SymbolTable,
     ) -> Result<AstId, String> {
+        self.println_ast_id(&root, atoms);
         let ast = self.get(root).unwrap().clone();
 
         match ast {
@@ -50,7 +51,10 @@ impl AstHeap {
                         self.println_ast_id(&eval_functor_id, atoms);
                         let atom_id = match arg {
                             Ast::Atom(atom_id) => atom_id,
-                            Ast::Int(n) => atoms.get(AtomKind::Int(*n)).unwrap(),
+                            Ast::Int(n) => {
+                                println!("n: {}", n);
+                                atoms.get(AtomKind::Int(*n)).unwrap()
+                            }
                             Ast::Char(c) => atoms.get(AtomKind::Char(*c)).unwrap(),
                             _ => {
                                 self.println_ast_id(&eval_functor_id, atoms);
@@ -58,7 +62,7 @@ impl AstHeap {
                                 return Err(format!("cannot apply those ^"));
                             }
                         };
-                        let value_id = hash_map.get(atom_id).unwrap();
+                        let value_id = hash_map.get(atom_id).unwrap(); // TODO: If not in map, then return .nil
                         Ok(self.eval(*value_id, scope, atoms, symbols)?)
                     }
                     Ast::File(file_scope_id) => {
@@ -101,6 +105,10 @@ impl AstHeap {
                     }
                 }
                 return self.eval(else_id, scope, atoms, symbols);
+            }
+            Ast::Panic() => {
+                // TODO: Unwind the stack or something
+                panic!("panicked!\n")
             }
         }
     }

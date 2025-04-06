@@ -137,6 +137,10 @@ impl AstHeap {
         self.insert(Ast::If(conds, else_))
     }
 
+    pub(crate) fn create_panic(&mut self) -> AstId {
+        self.insert(Ast::Panic())
+    }
+
     /// Creates a linked-list node out of a map Ast
     pub(crate) fn make_list_node(
         &mut self,
@@ -148,6 +152,17 @@ impl AstHeap {
         fields.insert(head_atom, head);
         fields.insert(tail_atom, self.empty_map_id);
         self.create_map(fields)
+    }
+
+    pub(crate) fn make_tuple(&mut self, terms: Vec<AstId>, atoms: &mut AtomMap) -> AstId {
+        let mut children: HashMap<AtomId, AstId> = HashMap::new();
+        for (i, term) in terms.iter().enumerate() {
+            children.insert(
+                atoms.put_atoms_in_set(AtomKind::Int(i.try_into().unwrap())),
+                *term,
+            );
+        }
+        self.create_map(children)
     }
 
     /// Retrieves a reference to an Ast for a given ID, if it exists
@@ -228,7 +243,7 @@ impl AstHeap {
                     if i == 0 {
                         print!("if ");
                     } else {
-                        print!("elif ");
+                        print!(" elif ");
                     }
                     self.print_ast_id(cond, atoms);
                     print!(" then ");
@@ -236,6 +251,9 @@ impl AstHeap {
                 }
                 print!(" else ");
                 self.print_ast_id(else_, atoms);
+            }
+            Ast::Panic() => {
+                print!("panic")
             }
         }
     }
@@ -293,4 +311,6 @@ pub(crate) enum Ast {
     Apply(AstId, AstId),
 
     If(Vec<(AstId, AstId)>, AstId),
+
+    Panic(),
 }
