@@ -219,7 +219,7 @@ impl Parser {
                     let and_args = ast_heap.make_tuple(vec![acc, e], atoms);
                     ast_heap.create_apply(and_bif, and_args)
                 })
-                .unwrap();
+                .unwrap_or(ast_heap.truthy_id);
 
             // Construct the rhs, which may need to be modified to name arguments
             let mut modified_rhs_value = rhs_value;

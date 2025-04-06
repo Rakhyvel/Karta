@@ -15,7 +15,11 @@ impl AstHeap {
         atoms: &mut AtomMap,
         symbols: &mut SymbolTable,
     ) -> Result<AstId, String> {
-        self.println_ast_id(&root, atoms);
+        println!("AST:");
+        self.println_ast_id(&root, atoms, symbols);
+        println!("Scope:");
+        symbols.print_scope(scope, atoms);
+        println!("");
         let ast = self.get(root).unwrap().clone();
 
         match ast {
@@ -35,7 +39,11 @@ impl AstHeap {
                 }
                 Ok(self.create_map(new_map))
             }
-            Ast::Let(new_scope, expr) => self.eval(expr, new_scope, atoms, symbols),
+            Ast::Let(new_scope, expr) => {
+                let new_new_scope = symbols.new_scope(Some(scope));
+                symbols.insert_all(new_new_scope, new_scope);
+                self.eval(expr, new_new_scope, atoms, symbols)
+            }
             Ast::Identifier(id) => {
                 let (def, def_scope_id) = symbols.lookup_ident(id, scope, atoms)?;
                 self.eval(def, def_scope_id, atoms, symbols)
@@ -48,7 +56,7 @@ impl AstHeap {
 
                 match functor {
                     Ast::Map(hash_map) => {
-                        self.println_ast_id(&eval_functor_id, atoms);
+                        self.println_ast_id(&eval_functor_id, atoms, symbols);
                         let atom_id = match arg {
                             Ast::Atom(atom_id) => atom_id,
                             Ast::Int(n) => {
@@ -57,8 +65,8 @@ impl AstHeap {
                             }
                             Ast::Char(c) => atoms.get(AtomKind::Char(*c)).unwrap(),
                             _ => {
-                                self.println_ast_id(&eval_functor_id, atoms);
-                                self.println_ast_id(&eval_arg_id, atoms);
+                                self.println_ast_id(&eval_functor_id, atoms, symbols);
+                                self.println_ast_id(&eval_arg_id, atoms, symbols);
                                 return Err(format!("cannot apply those ^"));
                             }
                         };
@@ -69,8 +77,8 @@ impl AstHeap {
                         let atom_id = match arg {
                             Ast::Atom(atom_id) => atom_id,
                             _ => {
-                                self.println_ast_id(&eval_functor_id, atoms);
-                                self.println_ast_id(&eval_arg_id, atoms);
+                                self.println_ast_id(&eval_functor_id, atoms, symbols);
+                                self.println_ast_id(&eval_arg_id, atoms, symbols);
                                 return Err(format!("cannot apply those ^"));
                             }
                         };
@@ -90,10 +98,11 @@ impl AstHeap {
                         let new_scope = symbols.new_scope(Some(*closure_scope));
                         let key = atoms.get(AtomKind::NamedAtom(arg_name.clone())).unwrap();
                         symbols.insert(new_scope, *key, 0, eval_arg_id);
+                        println!("The arg is: {:?}", atoms.string_from_atom(*key));
                         self.eval(*expr_id, new_scope, atoms, symbols)
                     }
                     _ => {
-                        self.println_ast_id(&eval_functor_id, atoms);
+                        self.println_ast_id(&eval_functor_id, atoms, symbols);
                         return Err(format!("not a functor ^"));
                     }
                 }

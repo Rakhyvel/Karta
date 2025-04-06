@@ -343,7 +343,19 @@ in (@add (x, y))
     }
 
     #[test]
-    fn function_def() -> Result<(), String> {
+    fn function_def_1_arg() -> Result<(), String> {
+        let kctx = KartaContext::new()?;
+
+        let res: i64 = kctx
+            .eval("let double x = @mul(x, 2) in double 4")?
+            .as_int()?;
+
+        assert_eq!(res, 8);
+        Ok(())
+    }
+
+    #[test]
+    fn function_def_2_args() -> Result<(), String> {
         let kctx = KartaContext::new()?;
 
         let res: i64 = kctx
@@ -435,7 +447,7 @@ in (@add (x, y))
     fn integer_pattern_match() -> Result<(), String> {
         let kctx = KartaContext::new()?;
 
-        let res: i64 = kctx
+        let res = kctx
             .eval(
                 r#"let
   even? 0 = .t
@@ -447,9 +459,9 @@ in (@add (x, y))
 in even? (@neg 4)
 "#,
             )?
-            .as_int()?;
+            .truthy()?;
 
-        assert_eq!(res, 110);
+        assert!(res);
         Ok(())
     }
 }

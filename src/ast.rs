@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Display};
+use std::{collections::HashMap, fmt::Display, thread::scope};
 
 use crate::{
     atom::{AtomId, AtomKind, AtomMap},
@@ -179,12 +179,12 @@ impl AstHeap {
         self.builtin_function_methods.contains_key(name)
     }
 
-    pub(crate) fn println_ast_id(&self, ast_id: &AstId, atoms: &AtomMap) {
-        self.print_ast_id(ast_id, atoms);
+    pub(crate) fn println_ast_id(&self, ast_id: &AstId, atoms: &AtomMap, symbols: &SymbolTable) {
+        self.print_ast_id(ast_id, atoms, symbols);
         println!("");
     }
 
-    pub(crate) fn print_ast_id(&self, ast_id: &AstId, atoms: &AtomMap) {
+    pub(crate) fn print_ast_id(&self, ast_id: &AstId, atoms: &AtomMap, symbols: &SymbolTable) {
         let ast = self.get(*ast_id).unwrap();
         match ast {
             Ast::Int(x) => print!("{}", x),
@@ -208,28 +208,30 @@ impl AstHeap {
                         AtomKind::Char(c) => print!("\'{}\'", c),
                     }
                     print!(" = ");
-                    self.print_ast_id(v, atoms);
+                    self.print_ast_id(v, atoms, symbols);
                     print!(", ");
                 }
                 print!("}}");
             }
-            Ast::Let(_scope, ast_id) => {
-                print!("let {{ ... }} in ");
-                self.print_ast_id(ast_id, atoms);
+            Ast::Let(scope, ast_id) => {
+                print!("let ");
+                symbols.print_scope(*scope, atoms);
+                println!(" in ");
+                self.print_ast_id(ast_id, atoms, symbols);
             }
             Ast::Identifier(atom_id) => {
                 print!("Ident({:?})", atoms.string_from_atom(*atom_id).unwrap())
             }
             Ast::Apply(f_id, a_id) => {
                 print!("(");
-                self.print_ast_id(f_id, atoms);
+                self.print_ast_id(f_id, atoms, symbols);
                 print!(" ");
-                self.print_ast_id(a_id, atoms);
+                self.print_ast_id(a_id, atoms, symbols);
                 print!(")");
             }
             Ast::Lambda(arg, expr) => {
                 print!("(\\{} -> ", arg);
-                self.print_ast_id(expr, atoms);
+                self.print_ast_id(expr, atoms, symbols);
                 print!(")");
             }
             Ast::Closure(_arg, _expr, _scope) => {
@@ -245,12 +247,12 @@ impl AstHeap {
                     } else {
                         print!(" elif ");
                     }
-                    self.print_ast_id(cond, atoms);
+                    self.print_ast_id(cond, atoms, symbols);
                     print!(" then ");
-                    self.print_ast_id(expr, atoms);
+                    self.print_ast_id(expr, atoms, symbols);
                 }
                 print!(" else ");
-                self.print_ast_id(else_, atoms);
+                self.print_ast_id(else_, atoms, symbols);
             }
             Ast::Panic() => {
                 print!("panic")
