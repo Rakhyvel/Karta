@@ -199,20 +199,7 @@ impl AstHeap {
 
             Ast::File(_) => print!("<file>"),
 
-            Ast::Map(hash_map) => {
-                print!("{{");
-                for (k, v) in hash_map {
-                    match atoms.atom_from_id(*k).unwrap() {
-                        AtomKind::NamedAtom(s) => print!("{}", s),
-                        AtomKind::Int(n) => print!("{}", n),
-                        AtomKind::Char(c) => print!("\'{}\'", c),
-                    }
-                    print!(" = ");
-                    self.print_ast_id(v, atoms, symbols);
-                    print!(", ");
-                }
-                print!("}}");
-            }
+            Ast::Map(hash_map) => self.print_hash_map(hash_map, atoms, symbols),
             Ast::Let(scope, ast_id) => {
                 print!("let ");
                 symbols.print_scope(*scope, atoms);
@@ -258,6 +245,26 @@ impl AstHeap {
                 print!("panic")
             }
         }
+    }
+
+    fn print_hash_map(
+        &self,
+        hash_map: &HashMap<AtomId, AstId>,
+        atoms: &AtomMap,
+        symbols: &SymbolTable,
+    ) {
+        print!("{{");
+        for (k, v) in hash_map {
+            match atoms.atom_from_id(*k).unwrap() {
+                AtomKind::NamedAtom(s) => print!("{}", s),
+                AtomKind::Int(n) => print!("{}", n),
+                AtomKind::Char(c) => print!("\'{}\'", c),
+            }
+            print!(" = ");
+            self.print_ast_id(v, atoms, symbols);
+            print!(", ");
+        }
+        print!("}}");
     }
 }
 
