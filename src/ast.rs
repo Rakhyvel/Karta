@@ -154,6 +154,19 @@ impl AstHeap {
         self.create_map(fields)
     }
 
+    pub(crate) fn atom_from_ast(
+        &mut self,
+        key_ast_id: AstId,
+        atoms: &mut AtomMap,
+    ) -> Result<AtomId, String> {
+        Ok(match *self.get(key_ast_id).unwrap() {
+            Ast::Atom(s) => s,
+            Ast::Int(n) => atoms.put_atoms_in_set(AtomKind::Int(n)),
+            Ast::Char(c) => atoms.put_atoms_in_set(AtomKind::Char(c)),
+            _ => return Err(String::from("cannot use this as a key")),
+        })
+    }
+
     pub(crate) fn make_tuple(&mut self, terms: Vec<AstId>, atoms: &mut AtomMap) -> AstId {
         let mut children: HashMap<AtomId, AstId> = HashMap::new();
         for (i, term) in terms.iter().enumerate() {
