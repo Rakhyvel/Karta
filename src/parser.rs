@@ -40,7 +40,7 @@ impl Parser {
     ) -> Result<AstId, String> {
         self.get_tokens(file_contents);
 
-        while let Some(_) = self.accept(TokenKind::Newline) {}
+        self.accept_newlines();
 
         self.parse_bindings(scope, TokenKind::EndOfFile, ast_heap, atoms, symbol_table)?;
 
@@ -122,6 +122,10 @@ impl Parser {
         self.accept(kind).ok_or(err)
     }
 
+    fn accept_newlines(&mut self) {
+        while let Some(_) = self.accept(TokenKind::Newline) {}
+    }
+
     // fib 0 = 0
     // ; fib does not exist. create a lambda that takes in the arity number of arguments, and has an `if-elif-else` chain:
     // ;   \arg0 -> if (== arg0 0) then 0 else (panic! "function `fib` is not total!")
@@ -161,7 +165,7 @@ impl Parser {
 
             // Parse the RHS after the `=`
             let rhs_value = self.let_in_expr(scope, ast_heap, atoms, symbol_table)?;
-            while let Some(_) = self.accept(TokenKind::Newline) {}
+            self.accept_newlines();
 
             let if_chain_id = self.resolve_or_create_function_symbol(
                 &identifier,
@@ -374,9 +378,9 @@ impl Parser {
                         atoms,
                         symbol_table,
                     )?;
-                    while let Some(_) = self.accept(TokenKind::Newline) {}
+                    self.accept_newlines();
                     let _ = self.expect(TokenKind::Dedent)?;
-                    while let Some(_) = self.accept(TokenKind::Newline) {}
+                    self.accept_newlines();
                 } else {
                     self.parse_bindings(new_scope, TokenKind::In, ast_heap, atoms, symbol_table)?;
                 }
@@ -502,7 +506,7 @@ impl Parser {
         let _ = self.expect(TokenKind::If)?;
         let mut conds = vec![];
         let condition = self.let_in_expr(scope, ast_heap, atoms, symbol_table)?;
-        while let Some(_) = self.accept(TokenKind::Newline) {}
+        self.accept_newlines();
         let _ = self.expect(TokenKind::Then);
         let then = self.let_in_expr(scope, ast_heap, atoms, symbol_table)?;
         conds.push((condition, then));
@@ -512,7 +516,7 @@ impl Parser {
             let then = self.let_in_expr(scope, ast_heap, atoms, symbol_table)?;
             conds.push((condition, then));
         }
-        while let Some(_) = self.accept(TokenKind::Newline) {}
+        self.accept_newlines();
         let _ = self.expect(TokenKind::Else);
         let else_ = self.let_in_expr(scope, ast_heap, atoms, symbol_table)?;
         Ok(ast_heap.create_if(conds, else_))
@@ -602,7 +606,7 @@ impl Parser {
     ) -> Result<AstId, String> {
         let _ = self.expect(TokenKind::Indent)?;
         let retval = self.lambda_expr(scope, ast_heap, atoms, symbol_table)?;
-        while let Some(_) = self.accept(TokenKind::Newline) {}
+        self.accept_newlines();
         let _ = self.expect(TokenKind::Dedent)?;
         Ok(retval)
     }
