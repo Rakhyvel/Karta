@@ -183,18 +183,19 @@ impl<'a> Parser<'a> {
         match self.peek().kind {
             TokenKind::Let => {
                 let _ = self.pop();
+                let bindings: Vec<AstId>;
                 if self.peek().kind == TokenKind::Indent {
                     let _ = self.expect(TokenKind::Indent)?;
-                    self.parse_bindings(TokenKind::Dedent)?;
+                    bindings = self.parse_bindings(TokenKind::Dedent)?;
                     self.accept_newlines();
                     let _ = self.expect(TokenKind::Dedent)?;
                     self.accept_newlines();
                 } else {
-                    self.parse_bindings(TokenKind::In)?;
+                    bindings = self.parse_bindings(TokenKind::In)?;
                 }
                 let _ = self.expect(TokenKind::In)?;
                 let expr = self.lambda_expr()?;
-                Ok(self.asts.create_let(expr))
+                Ok(self.asts.create_let(bindings, expr))
             }
             _ => self.lambda_expr(),
         }

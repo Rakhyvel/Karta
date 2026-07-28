@@ -1,9 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{
-    ast::AstId,
-    interner::{AtomId, AtomTable, SymbolId},
-};
+use crate::{ast::AstId, interner::SymbolId};
 
 pub(crate) struct ScopeArena {
     scopes: Vec<Scope>,

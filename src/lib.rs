@@ -50,6 +50,7 @@
 //! - [ ] `$` for parens until end of line
 
 pub mod ast;
+mod elaborate;
 mod interner;
 mod layout;
 mod parser;
@@ -59,6 +60,7 @@ mod scope;
 mod source;
 mod span;
 mod tokenizer;
+mod walker;
 
 use std::{
     fs,

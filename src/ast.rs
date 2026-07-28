@@ -78,8 +78,8 @@ impl AstHeap {
         self.insert(Ast::File())
     }
 
-    pub(crate) fn create_let(&mut self, expr: AstId) -> AstId {
-        self.insert(Ast::Let(expr))
+    pub(crate) fn create_let(&mut self, fields: Vec<AstId>, in_expr: AstId) -> AstId {
+        self.insert(Ast::Let(fields, in_expr))
     }
 
     pub(crate) fn create_identifier(&mut self, identifier: SymbolId) -> AstId {
@@ -171,7 +171,7 @@ pub(crate) enum Ast {
     /// Just a scope for the file
     File(),
 
-    Let(AstId),
+    Let(Vec<AstId>, AstId),
     Identifier(SymbolId),
 
     Apply(AstId, AstId),

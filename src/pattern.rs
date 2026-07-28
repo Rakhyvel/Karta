@@ -21,6 +21,11 @@ impl PatternHeap {
     pub(crate) fn create_identifier(&mut self, identifier: SymbolId) -> PatternId {
         self.insert(Pattern::Identifier(identifier))
     }
+
+    /// Retrieves a reference to an Ast for a given ID, if it exists
+    pub(crate) fn get(&self, id: PatternId) -> Option<&Pattern> {
+        self.patterns.get(id.as_u32() as usize)
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
