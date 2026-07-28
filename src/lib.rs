@@ -151,7 +151,7 @@ impl KartaContext {
     }
 
     /// Constructs a new query from an expression, to be evaluated within the context constructed so far
-    pub fn eval(&self, expr_str: &str) -> Result<KartaQuery, String> {
+    pub fn eval(&self, expr_str: &str) -> Result<KartaQuery<'_>, String> {
         let mut parser = Parser::new();
         let result = {
             let mut ast_heap = self.ast_heap.try_lock().unwrap();
@@ -434,12 +434,18 @@ in (@add (x, y))
 
     #[test]
     fn list_empty_pattern_match() -> Result<(), String> {
-        let mut kctx = KartaContext::new()?;
+        let kctx = KartaContext::new()?;
 
-        kctx.import_file("core", "core/core.k")?;
-        let res: i64 = kctx.eval("core.+ 65 45")?.as_int()?;
+        let res: i64 = kctx
+            .eval(
+                r#"let
+  test [] = 111
+in (test [1, 2, 3])
+"#,
+            )?
+            .as_int()?;
 
-        assert_eq!(res, 110);
+        assert_eq!(res, 111);
         Ok(())
     }
 

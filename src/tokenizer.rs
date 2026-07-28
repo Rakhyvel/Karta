@@ -55,7 +55,7 @@ impl Tokenizer {
     fn handle_none(&mut self, char: char) {
         if char.is_whitespace() {
             self.advance(TokenizerState::Whitespace)
-        } else if char.is_digit(10) {
+        } else if char.is_ascii_digit() {
             self.advance(TokenizerState::Integer)
         } else if char == '.' {
             self.advance(TokenizerState::Atom)
@@ -107,7 +107,7 @@ impl Tokenizer {
     fn handle_integer(&mut self, char: char, tokens: &mut Vec<Token>) {
         if char == '.' {
             self.advance(TokenizerState::Float)
-        } else if self.eof() || !char.is_digit(10) {
+        } else if self.eof() || !char.is_ascii_digit() {
             self.add_token(TokenKind::Integer, tokens);
         } else {
             self.advance(self.state)
@@ -126,7 +126,7 @@ impl Tokenizer {
     /// Characters end at the second single quote
     fn handle_char(&mut self, char: char, tokens: &mut Vec<Token>) -> Result<(), String> {
         if self.eof() {
-            return Err(String::from("error: char goes to end of file"));
+            Err(String::from("error: char goes to end of file"))
         } else if char == '\'' {
             self.advance(TokenizerState::None);
             self.add_token(TokenKind::Char, tokens);
@@ -140,7 +140,7 @@ impl Tokenizer {
     /// Strings end at the second double quote
     fn handle_string(&mut self, char: char, tokens: &mut Vec<Token>) -> Result<(), String> {
         if self.eof() {
-            return Err(String::from("error: string goes to end of file"));
+            Err(String::from("error: string goes to end of file"))
         } else if char == '"' {
             self.advance(TokenizerState::None);
             self.add_token(TokenKind::String, tokens);
@@ -169,7 +169,7 @@ impl Tokenizer {
 
     /// Floats end at the end of file, or if the character is no longer a digit
     fn handle_float(&mut self, char: char, tokens: &mut Vec<Token>) {
-        if self.eof() || !char.is_digit(10) {
+        if self.eof() || !char.is_ascii_digit() {
             self.add_token(TokenKind::Float, tokens)
         } else {
             self.advance(self.state);
@@ -296,7 +296,7 @@ pub(crate) enum TokenKind {
 impl TokenKind {
     /// Get the token kind from a string representation
     fn from_string(str: &str) -> Self {
-        assert!(str.len() > 0);
+        assert!(!str.is_empty());
         match str {
             "{" => TokenKind::LeftBrace,
             "}" => TokenKind::RightBrace,
@@ -315,7 +315,7 @@ impl TokenKind {
             "elif" => TokenKind::Elif,
             "else" => TokenKind::Else,
             _ if str.chars().nth(0).unwrap() == '.' => TokenKind::Atom,
-            _ if str.chars().nth(0).unwrap().is_digit(10) => TokenKind::Integer,
+            _ if str.chars().nth(0).unwrap().is_ascii_digit() => TokenKind::Integer,
             _ => TokenKind::Identifier,
         }
     }

@@ -71,7 +71,6 @@ impl SymbolTable {
                     curr_scope = scope_ref.parent();
                 }
             } else {
-                panic!("hehre");
                 return Err(format!(
                     "use of undefined identifier `{}`",
                     atoms.string_from_atom(key).unwrap()
@@ -125,7 +124,7 @@ impl Scope {
     }
 
     pub(crate) fn get_def(&self, key: AtomId) -> Option<AstId> {
-        self.get(key).and_then(|d| Some(d.def))
+        self.get(key).map(|d| d.def)
     }
 
     pub(crate) fn parent(&self) -> Option<ScopeId> {

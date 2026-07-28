@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Display, thread::scope};
+use std::{collections::HashMap, fmt::Display};
 
 use crate::{
     atom::{AtomId, AtomKind, AtomMap},
@@ -141,6 +141,11 @@ impl AstHeap {
         self.insert(Ast::Panic())
     }
 
+    pub(crate) fn make_empty_map(&mut self) -> AstId {
+        let fields: HashMap<AtomId, AstId> = HashMap::new();
+        self.create_map(fields)
+    }
+
     /// Creates a linked-list node out of a map Ast
     pub(crate) fn make_list_node(
         &mut self,
@@ -194,7 +199,7 @@ impl AstHeap {
 
     pub(crate) fn println_ast_id(&self, ast_id: &AstId, atoms: &AtomMap, symbols: &SymbolTable) {
         self.print_ast_id(ast_id, atoms, symbols);
-        println!("");
+        println!("\n");
     }
 
     pub(crate) fn print_ast_id(&self, ast_id: &AstId, atoms: &AtomMap, symbols: &SymbolTable) {

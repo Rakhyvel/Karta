@@ -1,10 +1,10 @@
-use std::{collections::HashMap, ops::RemAssign};
+use std::collections::HashMap;
 
 use crate::{
     ast::{Ast, AstHeap, AstId},
-    atom::{self, AtomId, AtomKind, AtomMap},
+    atom::{AtomId, AtomKind, AtomMap},
     layout,
-    scope::{self, ScopeId, SymbolTable},
+    scope::{ScopeId, SymbolTable},
     tokenizer::{Token, TokenKind, Tokenizer},
 };
 
@@ -62,7 +62,7 @@ impl Parser {
 
     fn get_tokens(&mut self, file_contents: String) {
         let mut tokenizer = Tokenizer::new(file_contents);
-        let _ = tokenizer.tokenize(&mut self.tokens).unwrap();
+        tokenizer.tokenize(&mut self.tokens).unwrap();
         layout::layout(&mut self.tokens);
     }
 
@@ -74,8 +74,7 @@ impl Parser {
     /// Removes and returns the token at the begining of the stream
     fn pop(&mut self) -> &Token {
         self.cursor += 1;
-        let retval = &self.tokens[self.cursor - 1];
-        retval
+        &self.tokens[self.cursor - 1]
     }
 
     fn next_is_expr(&self) -> bool {
@@ -123,7 +122,7 @@ impl Parser {
     }
 
     fn accept_newlines(&mut self) {
-        while let Some(_) = self.accept(TokenKind::Newline) {}
+        while self.accept(TokenKind::Newline).is_some() {}
     }
 
     // fib 0 = 0
@@ -252,7 +251,7 @@ impl Parser {
 
     fn build_pattern_conditions(
         &mut self,
-        args: &Vec<AstId>,
+        args: &[AstId],
         ast_heap: &mut AstHeap,
         atoms: &mut AtomMap,
     ) -> Result<AstId, String> {
@@ -262,9 +261,20 @@ impl Parser {
             .map(|(i, arg_id)| {
                 let arg_ast = ast_heap.get(*arg_id).unwrap();
                 let arg_name = format!("$arg{}", i);
+
                 match arg_ast {
                     Ast::Identifier(_) => ast_heap.truthy_id,
                     Ast::Int(_) => {
+                        let eql_bif = ast_heap.create_builtin_function(
+                            atoms.put_atoms_in_set(AtomKind::NamedAtom(String::from("@eql"))),
+                        );
+                        let arg_name_atom_value =
+                            atoms.put_atoms_in_set(AtomKind::NamedAtom(arg_name));
+                        let arg_ident = ast_heap.create_identifier(arg_name_atom_value);
+                        let eql_args = ast_heap.make_tuple(vec![*arg_id, arg_ident], atoms);
+                        ast_heap.create_apply(eql_bif, eql_args)
+                    }
+                    Ast::Map(_) => {
                         let eql_bif = ast_heap.create_builtin_function(
                             atoms.put_atoms_in_set(AtomKind::NamedAtom(String::from("@eql"))),
                         );
@@ -295,7 +305,7 @@ impl Parser {
 
     fn rewrite_rhs_with_args(
         &mut self,
-        args: &Vec<AstId>,
+        args: &[AstId],
         rhs_value: AstId,
         scope: ScopeId,
         ast_heap: &mut AstHeap,
@@ -310,13 +320,10 @@ impl Parser {
             let anon_arg_ident = ast_heap.create_identifier(anon_arg_name_atom_value);
 
             let arg_ast = ast_heap.get(*arg_id).unwrap();
-            match arg_ast {
-                Ast::Identifier(atom) => {
-                    let new_scope = symbol_table.new_scope(Some(scope));
-                    symbol_table.insert(new_scope, *atom, 0, anon_arg_ident);
-                    modified_rhs_value = ast_heap.create_let(new_scope, modified_rhs_value);
-                }
-                _ => {} // Leave rhs unchanged
+            if let Ast::Identifier(atom) = arg_ast {
+                let new_scope = symbol_table.new_scope(Some(scope));
+                symbol_table.insert(new_scope, *atom, 0, anon_arg_ident);
+                modified_rhs_value = ast_heap.create_let(new_scope, modified_rhs_value);
             }
         }
         Ok(modified_rhs_value)
@@ -348,7 +355,7 @@ impl Parser {
             let mut terms = vec![];
             terms.push(expr);
 
-            while let Some(_) = self.accept(TokenKind::Comma) {
+            while self.accept(TokenKind::Comma).is_some() {
                 terms.push(self.let_in_expr(scope, ast_heap, atoms, symbol_table)?);
             }
 
@@ -563,7 +570,8 @@ impl Parser {
         let tail_atom = atoms.put_atoms_in_set(AtomKind::NamedAtom(String::from(".tail")));
 
         if self.accept(TokenKind::RightSquare).is_some() {
-            Ok(ast_heap.nil_id)
+            let retval = ast_heap.make_empty_map();
+            Ok(retval)
         } else {
             let head = self.let_in_expr(scope, ast_heap, atoms, symbol_table)?;
             let retval = ast_heap.make_list_node(head_atom, head, tail_atom);

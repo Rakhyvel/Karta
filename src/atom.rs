@@ -13,7 +13,7 @@ impl AtomMap {
 
     pub(crate) fn put_atoms_in_set(&mut self, atom: AtomKind) -> AtomId {
         if let Some(the_atom) = self.atoms.get(&atom) {
-            return *the_atom;
+            *the_atom
         } else {
             let the_atom = AtomId::new(self.atoms.len());
             self.atoms.insert(atom, the_atom);
@@ -36,13 +36,10 @@ impl AtomMap {
 
     pub(crate) fn string_from_atom(&self, atom_id: AtomId) -> Option<String> {
         for (k, v) in &self.atoms {
-            match k {
-                AtomKind::NamedAtom(name) => {
-                    if (*v) == atom_id {
-                        return Some(name.clone());
-                    }
+            if let AtomKind::NamedAtom(name) = k {
+                if (*v) == atom_id {
+                    return Some(name.clone());
                 }
-                _ => {}
             }
         }
         None

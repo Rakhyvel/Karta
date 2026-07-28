@@ -47,7 +47,7 @@ impl<'a> KartaQuery<'a> {
         };
 
         self.current_result = match root_ast {
-            Ast::Map(map) => Ok(*map.get(&field_atom_id).expect("unreachable code")),
+            Ast::Map(map) => Ok(*map.get(field_atom_id).expect("unreachable code")),
             _ => Err(format!("cannot call `get` on {:?} type AST", root_ast)),
         };
 
@@ -68,7 +68,7 @@ impl<'a> KartaQuery<'a> {
                 .get(current_result)
                 .expect("couldn't get Ast for AstId");
             match ast {
-                Ast::Int(x) => Ok(T::from(*x as i64)),
+                Ast::Int(x) => Ok(T::from(*x)),
                 Ast::Float(x) => Ok(T::from(*x as i64)),
                 Ast::Char(x) => Ok(T::from(*x as i64)),
                 _ => Err(format!("cannot convert {:?} to int", ast)),
@@ -92,7 +92,7 @@ impl<'a> KartaQuery<'a> {
                 .expect("couldn't get Ast for AstId");
             match ast {
                 Ast::Int(x) => Ok(T::from(*x as f64)),
-                Ast::Float(x) => Ok(T::from(*x as f64)),
+                Ast::Float(x) => Ok(T::from(*x)),
                 _ => Err(format!("cannot convert {:?} to float", ast)),
             }
         } else {
@@ -149,7 +149,7 @@ impl<'a> KartaQuery<'a> {
                 .get(current_result)
                 .expect("couldn't get Ast for AstId");
             match ast {
-                Ast::Map(x) => Ok(x.len() == 0),
+                Ast::Map(x) => Ok(x.is_empty()),
                 _ => Ok(false),
             }
         } else {

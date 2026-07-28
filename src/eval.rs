@@ -15,11 +15,6 @@ impl AstHeap {
         atoms: &mut AtomMap,
         symbols: &mut SymbolTable,
     ) -> Result<AstId, String> {
-        println!("AST:");
-        self.println_ast_id(&root, atoms, symbols);
-        println!("Scope:");
-        symbols.print_scope(scope, atoms);
-        println!("");
         let ast = self.get(root).unwrap().clone();
 
         match ast {
@@ -73,15 +68,12 @@ impl AstHeap {
     ) -> Result<AtomId, String> {
         match arg {
             Ast::Atom(atom_id) => Ok(*atom_id),
-            Ast::Int(n) => {
-                println!("n: {}", n);
-                Ok(*atoms.get(AtomKind::Int(*n)).unwrap())
-            }
+            Ast::Int(n) => Ok(*atoms.get(AtomKind::Int(*n)).unwrap()),
             Ast::Char(c) => Ok(*atoms.get(AtomKind::Char(*c)).unwrap()),
             _ => {
                 self.println_ast_id(&eval_functor_id, atoms, symbols);
                 self.println_ast_id(&eval_arg_id, atoms, symbols);
-                Err(format!("cannot apply those ^"))
+                Err(String::from("cannot apply those ^"))
             }
         }
     }
@@ -99,7 +91,6 @@ impl AstHeap {
         let arg = self.get(eval_arg_id).unwrap();
         match functor {
             Ast::Map(hash_map) => {
-                self.println_ast_id(&eval_functor_id, atoms, symbols);
                 let atom_id =
                     self.atom_id_from_arg(arg, eval_functor_id, eval_arg_id, atoms, symbols)?;
                 let value_id = hash_map.get(&atom_id).unwrap(); // TODO: If not in map, then return .nil
@@ -124,12 +115,11 @@ impl AstHeap {
                 let new_scope = symbols.new_scope(Some(*closure_scope));
                 let key = atoms.get(AtomKind::NamedAtom(arg_name.clone())).unwrap();
                 symbols.insert(new_scope, *key, 0, eval_arg_id);
-                println!("The arg is: {:?}", atoms.string_from_atom(*key));
                 self.eval(*expr_id, new_scope, atoms, symbols)
             }
             _ => {
                 self.println_ast_id(&eval_functor_id, atoms, symbols);
-                return Err(format!("not a functor ^"));
+                Err(String::from("not a functor ^"))
             }
         }
     }
@@ -147,7 +137,7 @@ impl AstHeap {
                 return self.eval(then_id, scope, atoms, symbols);
             }
         }
-        return self.eval(else_id, scope, atoms, symbols);
+        self.eval(else_id, scope, atoms, symbols)
     }
 
     pub(crate) fn and(
