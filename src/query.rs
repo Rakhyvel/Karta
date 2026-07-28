@@ -1,6 +1,5 @@
 use crate::{
     ast::{Ast, AstId},
-    atom::AtomKind,
     KartaContext,
 };
 
@@ -21,37 +20,6 @@ impl<'a> KartaQuery<'a> {
             context,
             current_result: Ok(current_result),
         }
-    }
-
-    /// Return a new query with its result being the result of applying the atom to the current result.
-    /// The result becomes an error if applied to a non-map, or if the previous result was errant.
-    pub fn get(mut self, field: AtomKind) -> Self {
-        let current_result = match self.current_result {
-            Ok(x) => x,
-            Err(_) => return self,
-        };
-
-        let ast_heap = self.context.ast_heap();
-        let atoms = self.context.atoms();
-
-        let root_ast = ast_heap
-            .get(current_result)
-            .expect("couldn't get Ast for AstId");
-
-        let field_atom_id = match atoms.get(field) {
-            Some(x) => x,
-            None => {
-                self.current_result = Ok(AstId::new(0));
-                return self;
-            }
-        };
-
-        self.current_result = match root_ast {
-            Ast::Map(map) => Ok(*map.get(field_atom_id).expect("unreachable code")),
-            _ => Err(format!("cannot call `get` on {:?} type AST", root_ast)),
-        };
-
-        self
     }
 
     /// Interpret the current result of this query as an integer.
@@ -105,12 +73,13 @@ impl<'a> KartaQuery<'a> {
     pub fn as_string(&self) -> Result<String, String> {
         let ast_heap = self.context.ast_heap();
         let strings = self.context.strings();
+
         if let Ok(current_result) = self.current_result {
             let ast = ast_heap
                 .get(current_result)
                 .expect("couldn't get Ast for AstId");
             match ast {
-                Ast::String(x) => Ok(x.clone()),
+                Ast::String(x) => Ok(strings.get(*x).to_owned()),
                 _ => Err(format!("cannot convert {:?} to string", ast)),
             }
         } else {
@@ -128,7 +97,7 @@ impl<'a> KartaQuery<'a> {
                 .get(current_result)
                 .expect("couldn't get Ast for AstId");
             match ast {
-                Ast::Atom(x) => Ok(x.as_usize() != 0),
+                Ast::Atom(_x) => todo!("figure out how to do truthy atoms"),
                 _ => Ok(true),
             }
         } else {
@@ -180,16 +149,7 @@ impl<'a> Iterator for KartaListIterator<'a> {
         if self.query.is_empty_map().unwrap() {
             None
         } else {
-            let head = self
-                .query
-                .clone()
-                .get(AtomKind::NamedAtom(String::from(".head")));
-            let tail = self
-                .query
-                .clone()
-                .get(AtomKind::NamedAtom(String::from(".tail")));
-            self.query = tail;
-            Some(head)
+            todo!("figure out how to do iteration")
         }
     }
 }
