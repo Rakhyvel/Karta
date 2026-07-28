@@ -34,7 +34,7 @@
 //!     * User calls `KartaContext::eval(&mut self, expr)`, using the context's module scope
 //! - [x] ! core/prelude
 //! - [x] Sets
-//! - [x] `f x y = z` => `f = \x -> \y -> z` (but also store the methods and their arity for overloading)
+//! - [ ] `f x y = z` => `f = \x -> \y -> z` (but also store the methods and their arity for overloading)
 //! - [ ] list patterns
 //! - [ ] tuple patterns
 //! - [ ] map & set patterns
@@ -50,7 +50,6 @@
 //! - [ ] `$` for parens until end of line
 
 pub mod ast;
-mod eval;
 mod interner;
 mod layout;
 mod parser;

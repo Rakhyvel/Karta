@@ -1,6 +1,9 @@
 use std::{collections::HashMap, fmt::Display};
 
-use crate::ast::AstId;
+use crate::{
+    ast::AstId,
+    interner::{AtomId, AtomTable},
+};
 
 pub(crate) struct SymbolTable {
     scopes: Vec<Scope>,
@@ -30,32 +33,11 @@ impl SymbolTable {
         scope_ref.insert(key, arity, def);
     }
 
-    pub(crate) fn insert_all(&mut self, dest_scope_id: ScopeId, src_scope_id: ScopeId) {
-        let src_bindings = self.get_scope(src_scope_id).bindings.clone();
-        let dest_bindings = &mut self.get_mut_scope(dest_scope_id).bindings;
-        dest_bindings.extend(src_bindings);
-    }
-
-    pub(crate) fn print_scope(&self, scope: ScopeId, atoms: &AtomMap) {
-        let mut curr_scope: Option<ScopeId> = Some(scope);
-        loop {
-            if let Some(some_curr_scope) = curr_scope {
-                let scope_ref = self.get_scope(some_curr_scope);
-                for key in scope_ref.bindings.keys() {
-                    println!("{:?}", atoms.string_from_atom(*key))
-                }
-                curr_scope = scope_ref.parent();
-            } else {
-                return;
-            }
-        }
-    }
-
     pub(crate) fn lookup_ident(
         &self,
         key: AtomId,
         scope: ScopeId,
-        atoms: &mut AtomMap,
+        atoms: &mut AtomTable,
     ) -> Result<(AstId, ScopeId), String> {
         let mut curr_scope: Option<ScopeId> = Some(scope);
         loop {
@@ -68,10 +50,7 @@ impl SymbolTable {
                     curr_scope = scope_ref.parent();
                 }
             } else {
-                return Err(format!(
-                    "use of undefined identifier `{}`",
-                    atoms.string_from_atom(key).unwrap()
-                ));
+                return Err(format!("use of undefined identifier `{}`", atoms.get(key)));
             }
         }
     }

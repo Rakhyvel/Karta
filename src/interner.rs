@@ -1,13 +1,14 @@
 use std::fmt::Debug;
+use std::hash::Hash;
 use std::{collections::HashMap, marker::PhantomData};
 
-#[derive(Debug, Copy, Clone)]
-struct Id<T: Debug + Copy + Clone> {
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct Id<T: Debug + Copy + Clone> {
     index: u32,
     _marker: PhantomData<T>,
 }
 
-struct InternTable<T: Debug + Copy + Clone> {
+pub struct InternTable<T: Debug + Copy + Clone> {
     values: Vec<String>,
     lookup: HashMap<String, Id<T>>,
 }
@@ -41,17 +42,17 @@ impl<T: Debug + Copy + Clone> InternTable<T> {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum Atom {}
 pub type AtomId = Id<Atom>;
 pub type AtomTable = InternTable<Atom>;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum StringLiteral {}
 pub type StringLiteralId = Id<StringLiteral>;
 pub type StringLiteralTable = InternTable<StringLiteral>;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum Symbol {}
 pub type SymbolId = Id<Symbol>;
 pub type SymbolTable = InternTable<Symbol>;
