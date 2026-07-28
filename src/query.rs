@@ -104,6 +104,7 @@ impl<'a> KartaQuery<'a> {
     /// Returns an error if the query result cannot be converted to a string, or if any errors occured during the query process.
     pub fn as_string(&self) -> Result<String, String> {
         let ast_heap = self.context.ast_heap();
+        let strings = self.context.strings();
         if let Ok(current_result) = self.current_result {
             let ast = ast_heap
                 .get(current_result)
