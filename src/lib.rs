@@ -50,12 +50,15 @@
 //! - [ ] `$` for parens until end of line
 
 pub mod ast;
-mod atom;
 mod eval;
+mod interner;
 mod layout;
 mod parser;
+mod pattern;
 pub mod query;
 mod scope;
+mod source;
+mod span;
 mod tokenizer;
 
 use std::{
@@ -65,7 +68,6 @@ use std::{
 };
 
 use ast::AstHeap;
-use atom::{AtomKind, AtomMap};
 use parser::Parser;
 use query::KartaQuery;
 use scope::{ScopeId, SymbolTable};

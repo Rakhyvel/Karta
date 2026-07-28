@@ -1,9 +1,6 @@
 use std::{collections::HashMap, fmt::Display};
 
-use crate::{
-    ast::AstId,
-    atom::{AtomId, AtomMap},
-};
+use crate::ast::AstId;
 
 pub(crate) struct SymbolTable {
     scopes: Vec<Scope>,

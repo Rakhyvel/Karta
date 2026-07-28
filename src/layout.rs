@@ -3,13 +3,13 @@ use crate::tokenizer::{Token, TokenKind};
 pub(crate) fn layout(tokens: &mut Vec<Token>) {
     // Setup a stack of indentation sizes
     // This is like a precedence stack for infix => postifx transformation
-    let mut stack: Vec<usize> = Vec::new();
+    let mut stack: Vec<u32> = Vec::new();
     stack.push(1);
 
     let mut i: usize = 0;
     while i < tokens.len() {
         let token_kind = tokens[i].kind;
-        let token_data_len = tokens[i].data.len();
+        let token_data_len = tokens[i].len();
         let token_span = tokens[i].span;
 
         if let TokenKind::Newline = token_kind {
@@ -20,7 +20,6 @@ pub(crate) fn layout(tokens: &mut Vec<Token>) {
                 // If token spaces > peek spaces => append token spaces, replace with ident
                 stack.push(token_data_len);
                 tokens[i] = Token {
-                    data: String::from(""),
                     kind: TokenKind::Indent,
                     span: token_span,
                 };
@@ -31,7 +30,6 @@ pub(crate) fn layout(tokens: &mut Vec<Token>) {
                     let slice = [
                         tokens[i].clone(),
                         Token {
-                            data: String::from(""),
                             kind: TokenKind::Dedent,
                             span: token_span,
                         },

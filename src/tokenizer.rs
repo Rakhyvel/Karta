@@ -1,28 +1,23 @@
+use crate::{source::SourceFile, span::Span};
+
 /// Converts file contents text into a stream of tokens
-pub(crate) struct Tokenizer {
+pub(crate) struct Tokenizer<'a> {
     /// Where in the file the tokenizer is currently working
-    cursor: usize,
+    cursor: u32,
     /// The cursor of the begining of the current token that the tokenizer is working on
-    starting_cursor: usize,
+    starting_cursor: u32,
     /// The actual contents of the file
-    file_contents: String,
-    /// The current line number for where the tokenizer is in the file
-    line: usize,
-    /// The current column number for where the tokenizer is in the file
-    col: usize,
+    source_file: &'a SourceFile,
     /// The state of the tokenizer
     state: TokenizerState,
 }
 
-impl Tokenizer {
+impl<'a> Tokenizer<'a> {
     /// Create a new tokenizer, taking ownership of the file contents string
-    pub(crate) fn new(mut file_contents: String) -> Self {
-        file_contents.push('\n'); // This is required to make the tokenizer happy
+    pub(crate) fn new(source_file: &'a SourceFile) -> Self {
         Self {
             cursor: 0,
-            file_contents,
-            line: 1,
-            col: 1,
+            source_file,
             state: TokenizerState::None,
             starting_cursor: 0,
         }
@@ -31,7 +26,12 @@ impl Tokenizer {
     /// Convert the file contents string into a stream of tokens
     pub(crate) fn tokenize(&mut self, tokens: &mut Vec<Token>) -> Result<(), String> {
         while !self.eof() {
-            let char = self.file_contents.chars().nth(self.cursor).unwrap(); // yeah probably slow, but it doesn't matter
+            let char = self
+                .source_file
+                .text
+                .chars()
+                .nth(self.cursor as usize)
+                .unwrap(); // yeah probably slow, but it doesn't matter
 
             match self.state {
                 TokenizerState::None => self.handle_none(char),
@@ -76,17 +76,16 @@ impl Tokenizer {
             // If token doesn't contain a newline, just ignore it
             // If it does, the data is from the newline all the way to the end
 
-            let token_data = &self.file_contents[self.starting_cursor..self.cursor];
-            if let Some(last_newline) = token_data.rfind('\n') {
-                let token_data = String::from(
-                    &self.file_contents[(self.starting_cursor + last_newline)..self.cursor],
-                );
+            let token_data = &self.source_file.span_text(Span {
+                start: self.starting_cursor,
+                end: self.cursor,
+            });
+            if let Some(_) = token_data.rfind('\n') {
                 let token = Token {
-                    data: token_data,
                     kind: TokenKind::Newline,
                     span: Span {
-                        col: self.col - 1,
-                        line: self.line,
+                        start: self.starting_cursor,
+                        end: self.cursor,
                     },
                 };
                 tokens.push(token);
@@ -95,10 +94,6 @@ impl Tokenizer {
             self.starting_cursor = self.cursor;
             self.state = TokenizerState::None
         } else {
-            if char == '\n' {
-                self.line += 1;
-                self.col = 0;
-            }
             self.advance(TokenizerState::Whitespace);
         }
     }
@@ -159,7 +154,10 @@ impl Tokenizer {
             || char.is_whitespace()
             || char == '.'
         {
-            let token_data = &self.file_contents[self.starting_cursor..self.cursor];
+            let token_data = &self.source_file.span_text(Span {
+                start: self.starting_cursor,
+                end: self.cursor,
+            });
             let token_kind = TokenKind::from_string(token_data);
             self.add_token(token_kind, tokens);
         } else {
@@ -179,8 +177,6 @@ impl Tokenizer {
     /// Comments end at newlines
     fn handle_comment(&mut self, char: char) {
         if char == '\n' {
-            self.line += 1;
-            self.col = 1;
             self.starting_cursor = self.cursor;
             self.state = TokenizerState::None
         } else {
@@ -190,9 +186,10 @@ impl Tokenizer {
 
     fn first_char_is_singular(&self) -> bool {
         self.char_is_singular(
-            self.file_contents
+            self.source_file
+                .text
                 .chars()
-                .nth(self.starting_cursor)
+                .nth(self.starting_cursor as usize)
                 .unwrap(),
         )
     }
@@ -209,25 +206,26 @@ impl Tokenizer {
 
     /// Whether or not the tokenizer is at the end of the file
     fn eof(&self) -> bool {
-        self.file_contents.chars().nth(self.cursor).is_none()
+        self.source_file
+            .text
+            .chars()
+            .nth(self.cursor as usize)
+            .is_none()
     }
 
     /// Advances the cursor and column number, and changes the state to a new state
     fn advance(&mut self, new_state: TokenizerState) {
         self.cursor += 1;
-        self.col += 1;
         self.state = new_state;
     }
 
     /// Adds the current span as a token to the list of tokens
     fn add_token(&mut self, kind: TokenKind, tokens: &mut Vec<Token>) {
-        let token_data = String::from(&self.file_contents[self.starting_cursor..self.cursor]);
         let token = Token {
-            data: token_data,
             kind,
             span: Span {
-                col: self.col - 1,
-                line: self.line,
+                start: self.starting_cursor,
+                end: self.cursor,
             },
         };
         tokens.push(token);
@@ -251,15 +249,19 @@ enum TokenizerState {
     Comment,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 /// Represents a single piece of text in the file
 pub(crate) struct Token {
-    /// Owning string representing the actual text data for this string
-    pub(crate) data: String,
     /// What kind of token this is
     pub(crate) kind: TokenKind,
     /// Where in the file this token came from
     pub(crate) span: Span,
+}
+
+impl Token {
+    pub fn len(&self) -> u32 {
+        self.span.end - self.span.start
+    }
 }
 
 #[derive(PartialEq, Clone, Copy, Debug)]
@@ -319,13 +321,4 @@ impl TokenKind {
             _ => TokenKind::Identifier,
         }
     }
-}
-
-#[derive(Clone, Copy, Debug)]
-/// Represents a position in a text file
-pub(crate) struct Span {
-    /// Line number of the file, starts at 1
-    pub(crate) line: usize,
-    /// Column number of the file, starts at 1
-    pub(crate) col: usize,
 }
