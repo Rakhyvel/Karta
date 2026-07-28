@@ -18,7 +18,7 @@ impl AstHeap {
 
     /// Inserts a new Ast into the heap, and returns its ID
     fn insert(&mut self, ast: Ast) -> AstId {
-        let retval = AstId::new(self.asts.len());
+        let retval = AstId::new(self.asts.len() as u32);
         self.asts.push(ast);
         retval
     }
@@ -108,27 +108,27 @@ impl AstHeap {
 
     /// Retrieves a reference to an Ast for a given ID, if it exists
     pub(crate) fn get(&self, ast_id: AstId) -> Option<&Ast> {
-        self.asts.get(ast_id.as_usize())
+        self.asts.get(ast_id.as_u32() as usize)
     }
 
     /// Retrieves a mutable reference to an Ast for a given ID, if it exists
     pub(crate) fn get_mut(&mut self, ast_id: AstId) -> Option<&mut Ast> {
-        self.asts.get_mut(ast_id.as_usize())
+        self.asts.get_mut(ast_id.as_u32() as usize)
     }
 }
 
 #[derive(Copy, Clone, Debug)]
 /// Unique identifier of an Ast expression in the context's vector of Asts
-pub struct AstId(usize);
+pub struct AstId(u32);
 
 impl AstId {
     /// Create a new AstId
-    pub(crate) fn new(id: usize) -> Self {
+    pub(crate) fn new(id: u32) -> Self {
         AstId(id)
     }
 
-    /// Convert an AstId to a usize
-    pub(crate) fn as_usize(&self) -> usize {
+    /// Convert an AstId to a u32
+    pub(crate) fn as_u32(&self) -> u32 {
         self.0
     }
 }

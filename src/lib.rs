@@ -61,7 +61,6 @@ mod span;
 mod tokenizer;
 
 use std::{
-    collections::HashMap,
     fs,
     sync::{Arc, Mutex},
 };
@@ -69,7 +68,6 @@ use std::{
 use ast::AstHeap;
 use parser::Parser;
 use query::KartaQuery;
-use scope::ScopeId;
 
 use crate::{
     interner::{AtomTable, StringLiteralTable, SymbolTable},
@@ -79,15 +77,16 @@ use crate::{
 
 /// Represents the context for evaluating Karta files and expressions
 pub struct KartaContext {
-    /// Maps atom string representations to their atom id
-    atom_table: Arc<Mutex<AtomTable>>,
     /// Heap of all Asts, can be accessed with an AstId
     ast_heap: Arc<Mutex<AstHeap>>,
+    /// Heap of pattern ASTs
     pattern_heap: Arc<Mutex<PatternHeap>>,
+    /// Maps atom string representations to their atom id
+    atom_table: Arc<Mutex<AtomTable>>,
+    /// Table of interned symbol names
     symbol_table: Arc<Mutex<SymbolTable>>,
-    /// Intern string literal table
+    /// Table of interned string literals
     string_literal_table: Arc<Mutex<StringLiteralTable>>,
-    modules: HashMap<String, ScopeId>,
 }
 
 impl KartaContext {
@@ -99,7 +98,7 @@ impl KartaContext {
             pattern_heap: Arc::new(Mutex::new(PatternHeap::new())),
             symbol_table: Arc::new(Mutex::new(SymbolTable::new())),
             string_literal_table: Arc::new(Mutex::new(StringLiteralTable::new())),
-            modules: HashMap::new(),
+            // modules: HashMap::new(),
         })
     }
 
@@ -122,11 +121,7 @@ impl KartaContext {
         _module_name: impl ToString,
         file_contents: impl ToString,
     ) -> Result<(), String> {
-        let file_contents = file_contents.to_string();
-
-        let mut source = SourceFile {
-            text: file_contents,
-        };
+        let source = SourceFile::new(file_contents.to_string());
 
         let mut pattern_heap = self.pattern_heap.try_lock().unwrap();
         let mut string_literal_table = self.string_literal_table.try_lock().unwrap();
@@ -135,7 +130,7 @@ impl KartaContext {
         let mut symbol_table = self.symbol_table.try_lock().unwrap();
 
         let mut parser = Parser::new(
-            &mut source,
+            &source,
             &mut ast_heap,
             &mut pattern_heap,
             &mut symbol_table,
@@ -150,9 +145,7 @@ impl KartaContext {
 
     /// Constructs a new query from an expression, to be evaluated within the context constructed so far
     pub fn eval(&self, expr_str: impl ToString) -> Result<KartaQuery<'_>, String> {
-        let mut source = SourceFile {
-            text: expr_str.to_string(),
-        };
+        let source = SourceFile::new(expr_str.to_string());
         let mut pattern_heap = self.pattern_heap.try_lock().unwrap();
         let mut string_literal_table = self.string_literal_table.try_lock().unwrap();
         let mut ast_heap = self.ast_heap.try_lock().unwrap();
@@ -160,7 +153,7 @@ impl KartaContext {
         let mut symbol_table = self.symbol_table.try_lock().unwrap();
 
         let mut parser = Parser::new(
-            &mut source,
+            &source,
             &mut ast_heap,
             &mut pattern_heap,
             &mut symbol_table,
@@ -179,11 +172,6 @@ impl KartaContext {
 
     pub(crate) fn strings(&self) -> std::sync::MutexGuard<'_, StringLiteralTable> {
         self.string_literal_table.try_lock().unwrap()
-    }
-
-    /// The atoms map for this Karta context
-    pub(crate) fn atoms(&self) -> std::sync::MutexGuard<'_, AtomTable> {
-        self.atom_table.try_lock().unwrap() // Automatically unlocks when it goes out of scope
     }
 }
 

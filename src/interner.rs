@@ -2,12 +2,14 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use std::{collections::HashMap, marker::PhantomData};
 
+/// A unique ID into an intern table
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Id<T: Debug + Copy + Clone> {
     index: u32,
     _marker: PhantomData<T>,
 }
 
+/// A bidirectional table mapping interned strings to unique IDs
 pub struct InternTable<T: Debug + Copy + Clone> {
     values: Vec<String>,
     lookup: HashMap<String, Id<T>>,

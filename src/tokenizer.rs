@@ -28,7 +28,7 @@ impl<'a> Tokenizer<'a> {
         while !self.eof() {
             let char = self
                 .source_file
-                .text
+                .text()
                 .chars()
                 .nth(self.cursor as usize)
                 .unwrap(); // yeah probably slow, but it doesn't matter
@@ -80,7 +80,7 @@ impl<'a> Tokenizer<'a> {
                 start: self.starting_cursor,
                 end: self.cursor,
             });
-            if let Some(_) = token_data.rfind('\n') {
+            if token_data.rfind('\n').is_some() {
                 let token = Token {
                     kind: TokenKind::Newline,
                     span: Span {
@@ -187,7 +187,7 @@ impl<'a> Tokenizer<'a> {
     fn first_char_is_singular(&self) -> bool {
         self.char_is_singular(
             self.source_file
-                .text
+                .text()
                 .chars()
                 .nth(self.starting_cursor as usize)
                 .unwrap(),
@@ -207,7 +207,7 @@ impl<'a> Tokenizer<'a> {
     /// Whether or not the tokenizer is at the end of the file
     fn eof(&self) -> bool {
         self.source_file
-            .text
+            .text()
             .chars()
             .nth(self.cursor as usize)
             .is_none()

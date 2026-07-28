@@ -13,7 +13,7 @@ impl PatternHeap {
 
     /// Inserts a new Pattern into the heap, and returns its ID
     fn insert(&mut self, ast: Pattern) -> PatternId {
-        let retval = PatternId::new(self.patterns.len());
+        let retval = PatternId::new(self.patterns.len() as u32);
         self.patterns.push(ast);
         retval
     }
@@ -25,16 +25,16 @@ impl PatternHeap {
 
 #[derive(Copy, Clone, Debug)]
 /// Unique identifier of an Pattern expression in the context's vector of Asts
-pub struct PatternId(usize);
+pub struct PatternId(u32);
 
 impl PatternId {
     /// Create a new PatternId
-    pub(crate) fn new(id: usize) -> Self {
+    pub(crate) fn new(id: u32) -> Self {
         PatternId(id)
     }
 
-    /// Convert an PatternId to a usize
-    pub(crate) fn as_usize(&self) -> usize {
+    /// Convert an PatternId to a u32
+    pub(crate) fn as_u32(&self) -> u32 {
         self.0
     }
 }

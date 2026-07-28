@@ -28,12 +28,12 @@ pub(crate) fn layout(tokens: &mut Vec<Token>) {
                 while token_data_len < *stack.last().unwrap() {
                     stack.pop();
                     let slice = [
-                        tokens[i].clone(),
+                        tokens[i],
                         Token {
                             kind: TokenKind::Dedent,
                             span: token_span,
                         },
-                        tokens[i].clone(),
+                        tokens[i],
                     ];
                     tokens.splice(i..i + 1, slice.iter().cloned());
                 }
