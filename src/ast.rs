@@ -62,10 +62,6 @@ impl AstHeap {
         self.insert(Ast::Map(fields))
     }
 
-    pub(crate) fn create_field(&mut self, lhs: AstId, rhs: AstId) -> AstId {
-        self.insert(Ast::Field(lhs, rhs))
-    }
-
     pub(crate) fn make_list(&mut self, terms: Vec<AstId>) -> AstId {
         self.insert(Ast::List(terms))
     }
@@ -110,14 +106,9 @@ impl AstHeap {
     pub(crate) fn get(&self, ast_id: AstId) -> Option<&Ast> {
         self.asts.get(ast_id.as_u32() as usize)
     }
-
-    /// Retrieves a mutable reference to an Ast for a given ID, if it exists
-    pub(crate) fn get_mut(&mut self, ast_id: AstId) -> Option<&mut Ast> {
-        self.asts.get_mut(ast_id.as_u32() as usize)
-    }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 /// Unique identifier of an Ast expression in the context's vector of Asts
 pub struct AstId(u32);
 
@@ -167,7 +158,6 @@ pub(crate) enum Ast {
     List(Vec<AstId>),
     /// Maps AtomId's to an Ast within the context
     Map(Vec<(AstId, AstId)>),
-    Field(AstId, AstId),
     /// Just a scope for the file
     File(),
 

@@ -26,6 +26,7 @@ impl<'a> AstVisitor for TreePrint<'a> {
     type Error = String;
 
     fn enter_ast(&mut self, id: AstId) -> Result<(), Self::Error> {
+        print!("{id:?}:");
         for _ in 0..self.indent * Self::INDENT_WIDTH {
             print!(" ")
         }
@@ -44,6 +45,7 @@ impl<'a> AstVisitor for TreePrint<'a> {
     }
 
     fn enter_pattern(&mut self, id: PatternId) -> Result<(), Self::Error> {
+        print!("{id:?}:");
         for _ in 0..self.indent * Self::INDENT_WIDTH {
             print!(" ")
         }

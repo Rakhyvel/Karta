@@ -50,6 +50,7 @@
 //! - [ ] `$` for parens until end of line
 
 pub mod ast;
+mod debug;
 mod elaborate;
 mod interner;
 mod layout;
@@ -72,9 +73,12 @@ use parser::Parser;
 use query::KartaQuery;
 
 use crate::{
+    debug::TreePrint,
+    elaborate::{Declare, Elaboration},
     interner::{AtomTable, StringLiteralTable, SymbolTable},
     pattern::PatternHeap,
     source::SourceFile,
+    walker::AstWalker,
 };
 
 /// Represents the context for evaluating Karta files and expressions
@@ -89,6 +93,8 @@ pub struct KartaContext {
     symbol_table: Arc<Mutex<SymbolTable>>,
     /// Table of interned string literals
     string_literal_table: Arc<Mutex<StringLiteralTable>>,
+    /// Table of scope and def relationships
+    elab: Arc<Mutex<Elaboration>>,
 }
 
 impl KartaContext {
@@ -100,6 +106,7 @@ impl KartaContext {
             pattern_heap: Arc::new(Mutex::new(PatternHeap::new())),
             symbol_table: Arc::new(Mutex::new(SymbolTable::new())),
             string_literal_table: Arc::new(Mutex::new(StringLiteralTable::new())),
+            elab: Arc::new(Mutex::new(Elaboration::new())),
             // modules: HashMap::new(),
         })
     }
@@ -153,6 +160,7 @@ impl KartaContext {
         let mut ast_heap = self.ast_heap.try_lock().unwrap();
         let mut atoms_table = self.atom_table.try_lock().unwrap();
         let mut symbol_table = self.symbol_table.try_lock().unwrap();
+        let mut elab = self.elab.try_lock().unwrap();
 
         let mut parser = Parser::new(
             &source,
@@ -162,7 +170,25 @@ impl KartaContext {
             &mut string_literal_table,
             &mut atoms_table,
         );
-        let _expr_ast = parser.parse_expr()?;
+        let expr_ast = parser.parse_expr()?;
+
+        println!("The parsed AST:");
+        AstWalker::walk(
+            &ast_heap,
+            &pattern_heap,
+            expr_ast,
+            TreePrint::new(&ast_heap, &pattern_heap),
+        )?;
+
+        AstWalker::walk(
+            &ast_heap,
+            &pattern_heap,
+            expr_ast,
+            Declare::new(&ast_heap, &pattern_heap, &mut elab),
+        )?;
+
+        println!("\n");
+        elab.debug();
 
         todo!("figure out how to eval")
     }

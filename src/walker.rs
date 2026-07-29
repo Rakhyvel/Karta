@@ -33,16 +33,18 @@ impl<'a, V> AstWalker<'a, V>
 where
     V: AstVisitor,
 {
-    pub(crate) fn new(asts: &'a AstHeap, patterns: &'a PatternHeap, visitor: V) -> Self {
+    pub fn walk(
+        asts: &'a AstHeap,
+        patterns: &'a PatternHeap,
+        root: AstId,
+        visitor: V,
+    ) -> Result<(), V::Error> {
         Self {
             asts,
             patterns,
             visitor,
         }
-    }
-
-    pub fn walk(&mut self, root: AstId) -> Result<(), V::Error> {
-        self.walk_ast(root)
+        .walk_ast(root)
     }
 
     fn walk_ast(&mut self, id: AstId) -> Result<(), V::Error> {
@@ -86,7 +88,7 @@ where
                 }
             }
 
-            Ast::Field(lhs, rhs) | Ast::Apply(lhs, rhs) => {
+            Ast::Apply(lhs, rhs) => {
                 self.walk_ast(*lhs)?;
                 self.walk_ast(*rhs)?;
             }

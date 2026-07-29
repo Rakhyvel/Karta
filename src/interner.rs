@@ -1,10 +1,11 @@
+use std::any::type_name;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::{collections::HashMap, marker::PhantomData};
 
 /// A unique ID into an intern table
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct Id<T: Debug + Copy + Clone> {
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+pub struct Id<T> {
     index: u32,
     _marker: PhantomData<T>,
 }
@@ -58,3 +59,14 @@ pub type StringLiteralTable = InternTable<StringLiteral>;
 pub enum Symbol {}
 pub type SymbolId = Id<Symbol>;
 pub type SymbolTable = InternTable<Symbol>;
+
+/// just put the type name in the bag bro
+fn short_type_name<T>() -> &'static str {
+    type_name::<T>().rsplit("::").next().unwrap()
+}
+
+impl<T> Debug for Id<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}Id({})", short_type_name::<T>(), self.index)
+    }
+}

@@ -46,6 +46,13 @@ impl ScopeArena {
             }
         }
     }
+
+    pub(crate) fn debug(&self) {
+        for (i, scope) in self.scopes.iter().enumerate() {
+            println!("ScopeId({i})[{:?}]:", scope.parent());
+            scope.debug();
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -67,7 +74,7 @@ impl ScopeId {
 #[derive(Debug, Clone)]
 pub(crate) struct Scope {
     /// Binds variable names to their definition table entry
-    bindings: HashMap<SymbolId, DefId>,
+    defs: HashMap<SymbolId, DefId>,
 
     /// The parent Scope node
     parent: Option<ScopeId>,
@@ -77,20 +84,57 @@ impl Scope {
     fn new(parent: Option<ScopeId>) -> Self {
         Self {
             parent,
-            bindings: HashMap::new(),
+            defs: HashMap::new(),
         }
     }
 
     fn insert(&mut self, sym: SymbolId, def: DefId) {
-        self.bindings.insert(sym, def);
+        self.defs.insert(sym, def);
     }
 
     fn get_def(&self, sym: SymbolId) -> Option<&DefId> {
-        self.bindings.get(&sym)
+        self.defs.get(&sym)
     }
 
     fn parent(&self) -> Option<ScopeId> {
         self.parent
+    }
+
+    fn debug(&self) {
+        for (sym, def) in self.defs.iter() {
+            println!("    {sym:?} -> {def:?}");
+        }
+    }
+}
+
+pub struct DefArena {
+    defs: Vec<Definition>,
+}
+
+impl DefArena {
+    pub(crate) fn new() -> DefArena {
+        Self { defs: vec![] }
+    }
+
+    pub(crate) fn create_def(&mut self, arity: u32, kind: DefKind, rhs: Option<AstId>) -> DefId {
+        let retval = DefId::new(self.defs.len() as u32);
+        self.defs.push(Definition::new(arity, kind, rhs));
+        retval
+    }
+
+    pub(crate) fn get(&self, id: DefId) -> &Definition {
+        &self.defs[id.as_u32() as usize]
+    }
+
+    pub(crate) fn get_mut(&mut self, id: DefId) -> &mut Definition {
+        &mut self.defs[id.as_u32() as usize]
+    }
+
+    pub(crate) fn debug(&self) {
+        for (i, def) in self.defs.iter().enumerate() {
+            print!("DefId({i}): ");
+            def.debug();
+        }
     }
 }
 
@@ -114,7 +158,7 @@ impl DefId {
 pub(crate) struct Definition {
     arity: u32,
     kind: DefKind,
-    def: AstId,
+    rhs: Option<AstId>,
 }
 
 #[derive(Debug, Clone)]
@@ -124,15 +168,22 @@ pub enum DefKind {
 }
 
 impl Definition {
-    pub fn new(arity: u32, kind: DefKind, def: AstId) -> Self {
-        Self { arity, kind, def }
+    pub fn new(arity: u32, kind: DefKind, rhs: Option<AstId>) -> Self {
+        Self { arity, kind, rhs }
     }
 
     pub(crate) fn arity(&self) -> u32 {
         self.arity
     }
 
-    pub(crate) fn def(&self) -> AstId {
-        self.def
+    pub(crate) fn rhs(&self) -> Option<AstId> {
+        self.rhs
+    }
+
+    pub(crate) fn debug(&self) {
+        println!(
+            "arity={}, kind={:?}, rhs={:?}",
+            self.arity, self.kind, self.rhs
+        )
     }
 }
