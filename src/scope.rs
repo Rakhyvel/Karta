@@ -30,21 +30,20 @@ impl ScopeArena {
         scope_ref.insert(key, def);
     }
 
-    pub(crate) fn lookup_ident(&self, key: SymbolId, scope: ScopeId) -> Option<(DefId, ScopeId)> {
+    pub(crate) fn lookup_ident(&self, key: SymbolId, scope: ScopeId) -> Option<DefId> {
         let mut curr_scope: Option<ScopeId> = Some(scope);
-        loop {
-            if let Some(some_curr_scope) = curr_scope {
-                let scope_ref = self.get_scope(some_curr_scope);
 
-                if let Some(def) = scope_ref.get_def(key) {
-                    return Some((*def, some_curr_scope));
-                } else {
-                    curr_scope = scope_ref.parent();
-                }
-            } else {
-                return None;
+        while let Some(some_curr_scope) = curr_scope {
+            let scope = self.get_scope(some_curr_scope);
+
+            if let Some(def) = scope.get_def(key) {
+                return Some(*def);
             }
+
+            curr_scope = scope.parent();
         }
+
+        None
     }
 
     pub(crate) fn debug(&self) {

@@ -60,7 +60,7 @@ pub enum Symbol {}
 pub type SymbolId = Id<Symbol>;
 pub type SymbolTable = InternTable<Symbol>;
 
-/// just put the type name in the bag bro
+/// just put the name in the bag bro
 fn short_type_name<T>() -> &'static str {
     type_name::<T>().rsplit("::").next().unwrap()
 }

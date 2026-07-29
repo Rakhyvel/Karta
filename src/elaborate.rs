@@ -11,7 +11,11 @@ pub struct Elaboration {
     scopes: ScopeArena,
     defs: DefArena,
 
+    /// Maps ASTs to the scopes that they exist within
     ast_scopes: HashMap<AstId, ScopeId>,
+    /// Maps ASTs to the Defs that they define
+    defines: HashMap<AstId, DefId>,
+    /// Maps ASTs to the Defs that they refer to
     references: HashMap<AstId, DefId>,
 }
 
@@ -21,6 +25,7 @@ impl Elaboration {
             scopes: ScopeArena::new(),
             defs: DefArena::new(),
             ast_scopes: HashMap::new(),
+            defines: HashMap::new(),
             references: HashMap::new(),
         }
     }
@@ -30,6 +35,10 @@ impl Elaboration {
         self.scopes.debug();
         println!("\nDefs:");
         self.defs.debug();
+        println!("\nRefs:");
+        for (ast_id, def_id) in self.references.iter() {
+            println!("{ast_id:?} -> {def_id:?}");
+        }
     }
 }
 
@@ -78,6 +87,7 @@ impl<'a> AstVisitor for Declare<'a> {
                         .defs
                         .create_def(params.len() as u32, DefKind::Function, Some(*rhs));
                 self.elab.scopes.insert(this_scope_id, *name, def_id);
+                self.elab.defines.insert(id, def_id);
             }
             _ => {}
         }
@@ -105,13 +115,41 @@ impl<'a> AstVisitor for Declare<'a> {
 }
 
 pub struct Resolve<'a> {
+    asts: &'a AstHeap,
+    patterns: &'a PatternHeap,
     elab: &'a mut Elaboration,
 }
 
-impl<'a> AstVisitor for Resolve<'a> {
-    type Error = ();
+impl<'a> Resolve<'a> {
+    pub fn new(asts: &'a AstHeap, patterns: &'a PatternHeap, elab: &'a mut Elaboration) -> Self {
+        Self {
+            asts,
+            patterns,
+            elab,
+        }
+    }
+}
 
-    fn enter_ast(&mut self, _id: AstId) -> Result<(), Self::Error> {
-        todo!("assign DefIDs to identifiers");
+impl<'a> AstVisitor for Resolve<'a> {
+    type Error = String;
+
+    fn enter_ast(&mut self, id: AstId) -> Result<(), Self::Error> {
+        let ast = self.asts.get(id).expect("got an invalid AST id");
+        let ast_scope_id = *self
+            .elab
+            .ast_scopes
+            .get(&id)
+            .expect("should've been scoped during Declare");
+
+        if let Ast::Identifier(sym) = ast {
+            let def_id = self
+                .elab
+                .scopes
+                .lookup_ident(*sym, ast_scope_id)
+                .expect("TODO: Throw an actual error");
+            self.elab.references.insert(id, def_id);
+        }
+
+        Ok(())
     }
 }

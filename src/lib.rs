@@ -74,7 +74,7 @@ use query::KartaQuery;
 
 use crate::{
     debug::TreePrint,
-    elaborate::{Declare, Elaboration},
+    elaborate::{Declare, Elaboration, Resolve},
     interner::{AtomTable, StringLiteralTable, SymbolTable},
     pattern::PatternHeap,
     source::SourceFile,
@@ -185,6 +185,13 @@ impl KartaContext {
             &pattern_heap,
             expr_ast,
             Declare::new(&ast_heap, &pattern_heap, &mut elab),
+        )?;
+
+        AstWalker::walk(
+            &ast_heap,
+            &pattern_heap,
+            expr_ast,
+            Resolve::new(&ast_heap, &pattern_heap, &mut elab),
         )?;
 
         println!("\n");
