@@ -53,6 +53,7 @@ pub mod ast;
 mod debug;
 mod elaborate;
 mod interner;
+mod ir;
 mod layout;
 mod parser;
 mod pattern;
