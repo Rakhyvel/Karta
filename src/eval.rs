@@ -5,6 +5,8 @@ use crate::{
 
 pub struct Eval {
     code: Code,
+    env: Env,
+    heap: Heap,
 }
 
 struct Env {
@@ -62,46 +64,51 @@ impl Heap {
 
 impl Eval {
     pub fn new(code: Code) -> Self {
-        Self { code }
+        Self {
+            env: Env::new(code.slots_used),
+            code,
+            heap: Heap::new(),
+        }
     }
 
     pub fn eval(&mut self) -> Result<Value, String> {
-        let mut env = Env::new(self.code.slots_used);
-        let mut heap = Heap::new();
-
         for instr in self.code.instructions.iter() {
             match instr {
-                Instr::Const { dst, value } => env.store(*dst, *value),
+                Instr::Const { dst, value } => self.env.store(*dst, *value),
+
                 Instr::MakeMap { dst, pairs } => {
                     let map = MapObj {
                         pairs: pairs
                             .iter()
-                            .map(|(k, v)| (env.load(*k), env.load(*v)))
+                            .map(|(k, v)| (self.env.load(*k), self.env.load(*v)))
                             .collect(),
                     };
-                    let map_slot = heap.alloc_map(map);
-                    env.store(*dst, Value::Map(map_slot))
+                    let map_slot = self.heap.alloc_map(map);
+                    self.env.store(*dst, Value::Map(map_slot))
                 }
-                Instr::Apply { dst, lhs, rhs } => {
-                    let lhs = env.load(*lhs);
-                    let rhs = env.load(*rhs);
 
-                    match lhs {
-                        Value::Map(addr) => env.store(*dst, heap.deref(addr).map_lookup(rhs)?),
+                Instr::Apply { dst, lhs, rhs } => {
+                    let lhs = self.env.load(*lhs);
+                    let rhs = self.env.load(*rhs);
+
+                    let result = match lhs {
+                        Value::Map(addr) => self.heap.deref(addr).map_lookup(rhs)?,
                         Value::Builtin(builtin) => match builtin {
-                            Builtin::Add => env.store(*dst, Self::add(rhs, &heap)?),
+                            Builtin::Add => self.add(rhs)?,
                         },
                         _ => panic!("can't apply to a {lhs:?}"),
-                    }
+                    };
+
+                    self.env.store(*dst, result)
                 }
             }
         }
 
-        Ok(env.load(self.code.result))
+        Ok(self.env.load(self.code.result))
     }
 
-    fn add(args: Value, heap: &Heap) -> Result<Value, String> {
-        let (lhs, rhs) = Self::get_pair(args, heap)?;
+    fn add(&self, args: Value) -> Result<Value, String> {
+        let (lhs, rhs) = self.get_pair(args)?;
 
         match (lhs, rhs) {
             (Value::Int(x), Value::Int(y)) => Ok(Value::Int(x + y)),
@@ -110,12 +117,12 @@ impl Eval {
         }
     }
 
-    fn get_pair(value: Value, heap: &Heap) -> Result<(Value, Value), String> {
+    fn get_pair(&self, value: Value) -> Result<(Value, Value), String> {
         let Value::Map(addr) = value else {
             return Err(String::from("not a tuple"));
         };
 
-        let map_obj = heap.deref(addr);
+        let map_obj = self.heap.deref(addr);
 
         let lhs = map_obj.map_lookup(Value::Int(0))?;
         let rhs = map_obj.map_lookup(Value::Int(1))?;
