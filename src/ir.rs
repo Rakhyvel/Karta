@@ -28,6 +28,8 @@ impl Code {
 pub enum Instr {
     Const { dst: Slot, value: Value },
 
+    MakeMap { dst: Slot, pairs: Vec<(Slot, Slot)> },
+
     Apply { dst: Slot, lhs: Slot, rhs: Slot },
 }
 
@@ -38,7 +40,7 @@ pub enum Value {
     Float(f64),
     Char(char),
     Atom(AtomId),
-    Map(Vec<(Slot, Slot)>),
+    Map(Vec<(Value, Value)>),
 }
 
 impl Value {
@@ -135,16 +137,13 @@ impl<'a> Lowerer<'a> {
                 slot
             }
             Ast::Map(pairs) => {
-                let slot = self.new_slot();
-                let map = pairs
+                let dst = self.new_slot();
+                let pairs = pairs
                     .iter()
                     .map(|(k, v)| (self.lower_ast(*k), self.lower_ast(*v)))
                     .collect();
-                self.emit(Instr::Const {
-                    dst: slot,
-                    value: Value::Map(map),
-                });
-                slot
+                self.emit(Instr::MakeMap { dst, pairs });
+                dst
             }
             Ast::Identifier(_) => {
                 let def = self.elab.refer(id).expect("should exist");

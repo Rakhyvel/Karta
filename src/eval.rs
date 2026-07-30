@@ -37,18 +37,23 @@ impl Eval {
                 Instr::Const { dst, value } => {
                     env.store(*dst, value.clone());
                 }
+                Instr::MakeMap { dst, pairs } => {
+                    let map = pairs
+                        .iter()
+                        .map(|(k, v)| (env.load(*k).clone(), env.load(*v).clone()))
+                        .collect();
+                    env.store(*dst, Value::Map(map))
+                }
                 Instr::Apply { dst, lhs, rhs } => {
                     let lhs = env.load(*lhs);
                     let rhs = env.load(*rhs);
+
                     match lhs {
                         Value::Map(pairs) => {
-                            let pair = pairs.iter().find(|(k, _)| {
-                                let k_val = env.load(*k);
-                                k_val == rhs
-                            });
+                            let pair = pairs.iter().find(|(k, _)| k == rhs);
+
                             if let Some((_, v)) = pair {
-                                let v_val = env.load(*v);
-                                env.store(*dst, v_val.clone())
+                                env.store(*dst, v.clone())
                             } else {
                                 panic!("map didnt contain the key!")
                             }
