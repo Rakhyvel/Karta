@@ -6,6 +6,23 @@ use crate::{
     scope::DefId,
 };
 
+pub struct Code {
+    pub instructions: Vec<Instr>,
+    pub slots_used: u32,
+    pub result: Slot,
+}
+
+impl Code {
+    pub fn debug(&self) {
+        println!("Slots used: {}", self.slots_used);
+        println!("Result: {:?}", self.result);
+        println!("Instructions:");
+        for instr in self.instructions.iter() {
+            println!("{instr:?}");
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum Instr {
     Const { dst: Slot, value: Value },
@@ -16,12 +33,19 @@ pub enum Instr {
 
 #[derive(Debug, Clone, Copy)]
 pub enum Value {
+    Undefined,
     Int(i64),
     // TODO: Add more
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct Slot(u32);
+
+impl Slot {
+    pub fn as_usize(self) -> usize {
+        self.0 as usize
+    }
+}
 
 pub struct Lowerer<'a> {
     asts: &'a AstHeap,
@@ -43,7 +67,16 @@ impl<'a> Lowerer<'a> {
         }
     }
 
-    pub fn lower(&mut self, id: AstId) -> Slot {
+    pub fn lower(mut self, id: AstId) -> Code {
+        let result = self.lower_ast(id);
+        Code {
+            slots_used: self.slots_used,
+            instructions: self.instructions,
+            result,
+        }
+    }
+
+    pub fn lower_ast(&mut self, id: AstId) -> Slot {
         let ast = self.asts.get(id).expect("invalid AST id");
 
         match ast {
@@ -64,15 +97,15 @@ impl<'a> Lowerer<'a> {
             }
             Ast::Binding { rhs, .. } => {
                 let def = self.elab.define(id).expect("asts gotta define something!");
-                let slot = self.lower(*rhs);
+                let slot = self.lower_ast(*rhs);
                 self.def_map.insert(*def, slot);
                 slot
             }
             Ast::Let(bindings, expr) => {
                 for binding in bindings {
-                    _ = self.lower(*binding)
+                    _ = self.lower_ast(*binding)
                 }
-                self.lower(*expr)
+                self.lower_ast(*expr)
             }
             _ => todo!("not implemented: {:?}", ast),
         }
@@ -86,12 +119,5 @@ impl<'a> Lowerer<'a> {
 
     fn emit(&mut self, instr: Instr) {
         self.instructions.push(instr);
-    }
-
-    pub fn debug(&self) {
-        println!("Instructions:");
-        for instr in self.instructions.iter() {
-            println!("{instr:?}");
-        }
     }
 }

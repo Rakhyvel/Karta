@@ -52,6 +52,7 @@
 pub mod ast;
 mod debug;
 mod elaborate;
+mod eval;
 mod interner;
 mod ir;
 mod layout;
@@ -76,6 +77,7 @@ use query::KartaQuery;
 use crate::{
     debug::TreePrint,
     elaborate::{Declare, Elaboration, Resolve},
+    eval::Eval,
     interner::{AtomTable, StringLiteralTable, SymbolTable},
     ir::Lowerer,
     pattern::PatternHeap,
@@ -199,11 +201,12 @@ impl KartaContext {
         println!("\n");
         elab.debug();
 
-        let mut lowerer = Lowerer::new(&ast_heap, &elab);
-        let expr_slot = lowerer.lower(expr_ast);
+        let code = Lowerer::new(&ast_heap, &elab).lower(expr_ast);
         println!("\n");
-        lowerer.debug();
-        println!("Expr slot: {expr_slot:?}");
+        code.debug();
+
+        let result = Eval::new(code).eval();
+        println!("\nResult: {result:?}");
 
         todo!("figure out how to eval")
     }
