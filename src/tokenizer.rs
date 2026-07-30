@@ -38,6 +38,7 @@ impl<'a> Tokenizer<'a> {
                 TokenizerState::Whitespace => self.handle_whitespace(char, tokens),
                 TokenizerState::Integer => self.handle_integer(char, tokens),
                 TokenizerState::Atom => self.handle_atom(char, tokens),
+                TokenizerState::Builtin => self.handle_builtin(char, tokens),
                 TokenizerState::Char => self.handle_char(char, tokens)?,
                 TokenizerState::String => self.handle_string(char, tokens)?,
                 TokenizerState::Symbol => self.handle_symbol(char, tokens),
@@ -59,6 +60,8 @@ impl<'a> Tokenizer<'a> {
             self.advance(TokenizerState::Integer)
         } else if char == '.' {
             self.advance(TokenizerState::Atom)
+        } else if char == '@' {
+            self.advance(TokenizerState::Builtin)
         } else if char == '\'' {
             self.advance(TokenizerState::Char)
         } else if char == '"' {
@@ -113,6 +116,15 @@ impl<'a> Tokenizer<'a> {
     fn handle_atom(&mut self, char: char, tokens: &mut Vec<Token>) {
         if self.eof() || (char.is_whitespace() || self.char_is_singular(char)) {
             self.add_token(TokenKind::Atom, tokens)
+        } else {
+            self.advance(self.state)
+        }
+    }
+
+    /// Builtins end when the next char isn't a valid builtin character
+    fn handle_builtin(&mut self, char: char, tokens: &mut Vec<Token>) {
+        if self.eof() || (char.is_whitespace() || self.char_is_singular(char)) {
+            self.add_token(TokenKind::Builtin, tokens)
         } else {
             self.advance(self.state)
         }
@@ -242,6 +254,7 @@ enum TokenizerState {
     Whitespace,
     Integer,
     Atom,
+    Builtin,
     Char,
     String,
     Symbol,
@@ -277,6 +290,7 @@ pub(crate) enum TokenKind {
     Backslash,
     Arrow,
     Atom,
+    Builtin,
     Integer,
     Float,
     Char,

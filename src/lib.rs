@@ -50,6 +50,7 @@
 //! - [ ] `$` for parens until end of line
 
 pub mod ast;
+mod builtin;
 mod debug;
 mod elaborate;
 mod eval;
@@ -193,7 +194,7 @@ impl KartaContext {
             &ast_heap,
             &pattern_heap,
             expr_ast,
-            Resolve::new(&ast_heap, &pattern_heap, &mut elab),
+            Resolve::new(&ast_heap, &pattern_heap, &symbol_table, &mut elab),
         )?;
 
         println!("\n");
@@ -203,7 +204,7 @@ impl KartaContext {
         println!("\n");
         code.debug();
 
-        Ok(Eval::new(code).eval())
+        Eval::new(code).eval()
     }
 }
 
@@ -256,6 +257,16 @@ mod tests {
     }
 
     #[test]
+    fn integer_map_keys() -> Result<(), String> {
+        let kctx = KartaContext::new()?;
+
+        let res: i64 = kctx.eval("{0 = 23} 0")?.as_int()?;
+
+        assert_eq!(res, 23);
+        Ok(())
+    }
+
+    #[test]
     fn builtin_functions_operators() -> Result<(), String> {
         let karta_context = KartaContext::new()?;
 
@@ -280,16 +291,6 @@ in (@add (x, y))
             .as_int()?;
 
         assert_eq!(res, 9);
-        Ok(())
-    }
-
-    #[test]
-    fn integer_map_keys() -> Result<(), String> {
-        let kctx = KartaContext::new()?;
-
-        let res: i64 = kctx.eval("{0 = 23} 0")?.as_int()?;
-
-        assert_eq!(res, 23);
         Ok(())
     }
 

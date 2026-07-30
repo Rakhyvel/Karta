@@ -1,5 +1,6 @@
 use crate::{
     ast::{AstHeap, AstId},
+    builtin::Builtin,
     interner::{AtomTable, StringLiteralTable, SymbolTable},
     layout,
     pattern::{PatternHeap, PatternId},
@@ -87,6 +88,7 @@ impl<'a> Parser<'a> {
             || self.peek().kind == TokenKind::Char
             || self.peek().kind == TokenKind::String
             || self.peek().kind == TokenKind::Atom
+            || self.peek().kind == TokenKind::Builtin
             || self.peek().kind == TokenKind::Identifier
             || self.peek().kind == TokenKind::LeftBrace
             || self.peek().kind == TokenKind::LeftParen
@@ -231,6 +233,7 @@ impl<'a> Parser<'a> {
             TokenKind::Char => self.parse_char(),
             TokenKind::String => self.parse_string(),
             TokenKind::Atom => self.parse_atom(),
+            TokenKind::Builtin => self.parse_builtin(),
             TokenKind::Identifier => self.parse_identifier(),
             TokenKind::If => self.parse_if_expr(),
             TokenKind::LeftBrace => self.parse_map(),
@@ -292,6 +295,13 @@ impl<'a> Parser<'a> {
         let token_text = self.source.span_text(token_span);
         let atom_id = self.atoms.intern(token_text);
         Ok(self.asts.create_atom(atom_id))
+    }
+
+    fn parse_builtin(&mut self) -> Result<AstId, String> {
+        let name_span = self.expect(TokenKind::Builtin)?.span;
+        let name_text = self.source.span_text(name_span);
+        let builtin = Builtin::parse(name_text).ok_or(format!("unknown builtin `{name_text}`"))?;
+        Ok(self.asts.create_builtin_function(builtin))
     }
 
     fn parse_identifier(&mut self) -> Result<AstId, String> {

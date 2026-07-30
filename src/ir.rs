@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     ast::{Ast, AstHeap, AstId},
+    builtin::Builtin,
     elaborate::Elaboration,
     interner::AtomId,
     scope::DefId,
@@ -40,6 +41,7 @@ pub enum Value {
     Float(f64),
     Char(char),
     Atom(AtomId),
+    Builtin(Builtin),
     Map(Vec<(Value, Value)>),
 }
 
@@ -136,11 +138,37 @@ impl<'a> Lowerer<'a> {
                 });
                 slot
             }
+            Ast::BuiltinFunction(builtin) => {
+                let slot = self.new_slot();
+                self.emit(Instr::Const {
+                    dst: slot,
+                    value: Value::Builtin(*builtin),
+                });
+                slot
+            }
             Ast::Map(pairs) => {
                 let dst = self.new_slot();
                 let pairs = pairs
                     .iter()
                     .map(|(k, v)| (self.lower_ast(*k), self.lower_ast(*v)))
+                    .collect();
+                self.emit(Instr::MakeMap { dst, pairs });
+                dst
+            }
+            Ast::Tuple(elems) => {
+                let dst = self.new_slot();
+                let pairs = elems
+                    .iter()
+                    .enumerate()
+                    .map(|(i, elem)| {
+                        let index: Slot = self.new_slot();
+                        self.emit(Instr::Const {
+                            dst: index,
+                            value: Value::Int(i as i64),
+                        });
+                        let elem_val = self.lower_ast(*elem);
+                        (index, elem_val)
+                    })
                     .collect();
                 self.emit(Instr::MakeMap { dst, pairs });
                 dst

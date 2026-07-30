@@ -1,6 +1,7 @@
 use std::fmt::Display;
 
 use crate::{
+    builtin::Builtin,
     interner::{AtomId, StringLiteralId, SymbolId},
     pattern::PatternId,
 };
@@ -82,8 +83,8 @@ impl AstHeap {
         self.insert(Ast::Identifier(identifier))
     }
 
-    pub(crate) fn create_builtin_function(&mut self, identifier: AtomId) -> AstId {
-        self.insert(Ast::BuiltinFunction(identifier))
+    pub(crate) fn create_builtin_function(&mut self, id: Builtin) -> AstId {
+        self.insert(Ast::BuiltinFunction(id))
     }
 
     pub(crate) fn create_apply(&mut self, lhs: AstId, rhs: AstId) -> AstId {
@@ -141,6 +142,8 @@ pub(crate) enum Ast {
     Char(char),
     /// An atomic value
     Atom(AtomId),
+    /// A builtin function
+    BuiltinFunction(Builtin),
     /// A string
     String(StringLiteralId),
     /// Maps AtomId's to an Ast within the context
@@ -159,8 +162,6 @@ pub(crate) enum Ast {
     /// A function, with the name of its arg and expression
     Lambda(PatternId, AstId),
     /// Closure to represent an applied function
-    /// A builtin function
-    BuiltinFunction(AtomId),
     /// Just a scope for the file
     File(),
 
