@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::{
     ast::{Ast, AstHeap, AstId},
     elaborate::Elaboration,
+    interner::AtomId,
     scope::DefId,
 };
 
@@ -23,21 +24,21 @@ impl Code {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum Instr {
     Const { dst: Slot, value: Value },
 
-    Move { dst: Slot, src: Slot },
-    // TODO: Add more
+    Apply { dst: Slot, lhs: Slot, rhs: Slot },
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Undefined,
     Int(i64),
     Float(f64),
     Char(char),
-    // TODO: Add more
+    Atom(AtomId),
+    Map(Vec<(Slot, Slot)>),
 }
 
 impl Value {
@@ -67,7 +68,7 @@ impl Value {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Slot(u32);
 
 impl Slot {
@@ -117,6 +118,34 @@ impl<'a> Lowerer<'a> {
                 });
                 slot
             }
+            Ast::Float(n) => {
+                let slot = self.new_slot();
+                self.emit(Instr::Const {
+                    dst: slot,
+                    value: Value::Float(*n),
+                });
+                slot
+            }
+            Ast::Atom(id) => {
+                let slot = self.new_slot();
+                self.emit(Instr::Const {
+                    dst: slot,
+                    value: Value::Atom(*id),
+                });
+                slot
+            }
+            Ast::Map(pairs) => {
+                let slot = self.new_slot();
+                let map = pairs
+                    .iter()
+                    .map(|(k, v)| (self.lower_ast(*k), self.lower_ast(*v)))
+                    .collect();
+                self.emit(Instr::Const {
+                    dst: slot,
+                    value: Value::Map(map),
+                });
+                slot
+            }
             Ast::Identifier(_) => {
                 let def = self.elab.refer(id).expect("should exist");
                 *self
@@ -124,17 +153,24 @@ impl<'a> Lowerer<'a> {
                     .get(def)
                     .expect("def should be put by some binding")
             }
-            Ast::Binding { rhs, .. } => {
-                let def = self.elab.define(id).expect("asts gotta define something!");
-                let slot = self.lower_ast(*rhs);
-                self.def_map.insert(*def, slot);
-                slot
+            Ast::Apply(lhs, rhs) => {
+                let dst = self.new_slot();
+                let lhs = self.lower_ast(*lhs);
+                let rhs = self.lower_ast(*rhs);
+                self.emit(Instr::Apply { dst, lhs, rhs });
+                dst
             }
             Ast::Let(bindings, expr) => {
                 for binding in bindings {
                     _ = self.lower_ast(*binding)
                 }
                 self.lower_ast(*expr)
+            }
+            Ast::Binding { rhs, .. } => {
+                let def = self.elab.define(id).expect("asts gotta define something!");
+                let slot = self.lower_ast(*rhs);
+                self.def_map.insert(*def, slot);
+                slot
             }
             _ => todo!("not implemented: {:?}", ast),
         }

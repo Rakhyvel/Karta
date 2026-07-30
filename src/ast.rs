@@ -143,6 +143,13 @@ pub(crate) enum Ast {
     Atom(AtomId),
     /// A string
     String(StringLiteralId),
+    /// Maps AtomId's to an Ast within the context
+    Map(Vec<(AstId, AstId)>),
+    Tuple(Vec<AstId>),
+    List(Vec<AstId>),
+    Identifier(SymbolId),
+    Apply(AstId, AstId),
+    Let(Vec<AstId>, AstId),
     /// A binding
     Binding {
         name: SymbolId,
@@ -154,17 +161,8 @@ pub(crate) enum Ast {
     /// Closure to represent an applied function
     /// A builtin function
     BuiltinFunction(AtomId),
-    Tuple(Vec<AstId>),
-    List(Vec<AstId>),
-    /// Maps AtomId's to an Ast within the context
-    Map(Vec<(AstId, AstId)>),
     /// Just a scope for the file
     File(),
-
-    Let(Vec<AstId>, AstId),
-    Identifier(SymbolId),
-
-    Apply(AstId, AstId),
 
     If(Vec<(AstId, AstId)>, AstId),
 

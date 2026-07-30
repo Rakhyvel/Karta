@@ -222,6 +222,16 @@ mod tests {
     }
 
     #[test]
+    fn basic_variable_float() -> Result<(), String> {
+        let karta_context = KartaContext::new()?;
+
+        let res: f64 = karta_context.eval("let x = 100.0 in x")?.as_float()?;
+
+        assert_eq!(res, 100.0);
+        Ok(())
+    }
+
+    #[test]
     fn get_map_int() -> Result<(), String> {
         let karta_context = KartaContext::new()?;
 

@@ -19,8 +19,8 @@ impl Env {
         self.slots[dst.as_usize()] = val
     }
 
-    fn load(&self, dst: Slot) -> Value {
-        self.slots[dst.as_usize()]
+    fn load(&self, dst: Slot) -> &Value {
+        &self.slots[dst.as_usize()]
     }
 }
 
@@ -32,17 +32,33 @@ impl Eval {
     pub fn eval(&mut self) -> Value {
         let mut env = Env::new(self.code.slots_used);
 
-        for instr in self.code.instructions.iter().copied() {
+        for instr in self.code.instructions.iter() {
             match instr {
                 Instr::Const { dst, value } => {
-                    env.store(dst, value);
+                    env.store(*dst, value.clone());
                 }
-                Instr::Move { dst, src } => {
-                    env.store(dst, env.load(src));
+                Instr::Apply { dst, lhs, rhs } => {
+                    let lhs = env.load(*lhs);
+                    let rhs = env.load(*rhs);
+                    match lhs {
+                        Value::Map(pairs) => {
+                            let pair = pairs.iter().find(|(k, _)| {
+                                let k_val = env.load(*k);
+                                k_val == rhs
+                            });
+                            if let Some((_, v)) = pair {
+                                let v_val = env.load(*v);
+                                env.store(*dst, v_val.clone())
+                            } else {
+                                panic!("map didnt contain the key!")
+                            }
+                        }
+                        _ => panic!("can't apply to a {lhs:?}"),
+                    }
                 }
             }
         }
 
-        env.load(self.code.result)
+        env.load(self.code.result).clone()
     }
 }
