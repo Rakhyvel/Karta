@@ -34,7 +34,7 @@ pub enum Instr {
     Apply { dst: Slot, lhs: Slot, rhs: Slot },
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Copy)]
 pub enum Value {
     Undefined,
     Int(i64),
@@ -42,7 +42,7 @@ pub enum Value {
     Char(char),
     Atom(AtomId),
     Builtin(Builtin),
-    Map(Vec<(Value, Value)>),
+    Map(HeapSlot),
 }
 
 impl Value {
@@ -76,6 +76,19 @@ impl Value {
 pub struct Slot(u32);
 
 impl Slot {
+    pub fn as_usize(self) -> usize {
+        self.0 as usize
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HeapSlot(u32);
+
+impl HeapSlot {
+    pub fn new(id: u32) -> Self {
+        Self(id)
+    }
+
     pub fn as_usize(self) -> usize {
         self.0 as usize
     }

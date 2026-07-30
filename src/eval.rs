@@ -1,6 +1,6 @@
 use crate::{
-    builtin::{self, Builtin},
-    ir::{Code, Instr, Slot, Value},
+    builtin::Builtin,
+    ir::{Code, HeapSlot, Instr, Slot, Value},
 };
 
 pub struct Eval {
@@ -22,8 +22,41 @@ impl Env {
         self.slots[dst.as_usize()] = val
     }
 
-    fn load(&self, dst: Slot) -> &Value {
-        &self.slots[dst.as_usize()]
+    fn load(&self, dst: Slot) -> Value {
+        self.slots[dst.as_usize()]
+    }
+}
+
+struct MapObj {
+    pairs: Vec<(Value, Value)>,
+}
+
+impl MapObj {
+    fn map_lookup(&self, key: Value) -> Result<Value, String> {
+        self.pairs
+            .iter()
+            .find_map(|(k, v)| (*k == key).then_some(*v))
+            .ok_or_else(|| format!("map didn't contain key {key:?}"))
+    }
+}
+
+struct Heap {
+    maps: Vec<MapObj>,
+}
+
+impl Heap {
+    fn new() -> Self {
+        Self { maps: Vec::new() }
+    }
+
+    fn alloc_map(&mut self, obj: MapObj) -> HeapSlot {
+        let retval = HeapSlot::new(self.maps.len() as u32);
+        self.maps.push(obj);
+        retval
+    }
+
+    fn deref(&self, slot: HeapSlot) -> &MapObj {
+        &self.maps[slot.as_usize()]
     }
 }
 
@@ -34,27 +67,29 @@ impl Eval {
 
     pub fn eval(&mut self) -> Result<Value, String> {
         let mut env = Env::new(self.code.slots_used);
+        let mut heap = Heap::new();
 
         for instr in self.code.instructions.iter() {
             match instr {
-                Instr::Const { dst, value } => {
-                    env.store(*dst, value.clone());
-                }
+                Instr::Const { dst, value } => env.store(*dst, *value),
                 Instr::MakeMap { dst, pairs } => {
-                    let map = pairs
-                        .iter()
-                        .map(|(k, v)| (env.load(*k).clone(), env.load(*v).clone()))
-                        .collect();
-                    env.store(*dst, Value::Map(map))
+                    let map = MapObj {
+                        pairs: pairs
+                            .iter()
+                            .map(|(k, v)| (env.load(*k), env.load(*v)))
+                            .collect(),
+                    };
+                    let map_slot = heap.alloc_map(map);
+                    env.store(*dst, Value::Map(map_slot))
                 }
                 Instr::Apply { dst, lhs, rhs } => {
                     let lhs = env.load(*lhs);
                     let rhs = env.load(*rhs);
 
                     match lhs {
-                        Value::Map(_) => env.store(*dst, Self::map_lookup(lhs, rhs)?),
+                        Value::Map(addr) => env.store(*dst, heap.deref(addr).map_lookup(rhs)?),
                         Value::Builtin(builtin) => match builtin {
-                            Builtin::Add => env.store(*dst, Self::add(rhs)?),
+                            Builtin::Add => env.store(*dst, Self::add(rhs, &heap)?),
                         },
                         _ => panic!("can't apply to a {lhs:?}"),
                     }
@@ -62,25 +97,11 @@ impl Eval {
             }
         }
 
-        Ok(env.load(self.code.result).clone())
+        Ok(env.load(self.code.result))
     }
 
-    fn map_lookup(map: &Value, key: &Value) -> Result<Value, String> {
-        let Value::Map(pairs) = map else {
-            return Err(String::from("not a map"));
-        };
-
-        let pair = pairs.iter().find(|(k, _)| k == key);
-
-        if let Some((_, v)) = pair {
-            Ok(v.clone())
-        } else {
-            panic!("map didnt contain the key!")
-        }
-    }
-
-    fn add(args: &Value) -> Result<Value, String> {
-        let (lhs, rhs) = Self::get_pair(args)?;
+    fn add(args: Value, heap: &Heap) -> Result<Value, String> {
+        let (lhs, rhs) = Self::get_pair(args, heap)?;
 
         match (lhs, rhs) {
             (Value::Int(x), Value::Int(y)) => Ok(Value::Int(x + y)),
@@ -89,13 +110,15 @@ impl Eval {
         }
     }
 
-    fn get_pair(value: &Value) -> Result<(Value, Value), String> {
-        let Value::Map(_) = value else {
+    fn get_pair(value: Value, heap: &Heap) -> Result<(Value, Value), String> {
+        let Value::Map(addr) = value else {
             return Err(String::from("not a tuple"));
         };
 
-        let lhs = Self::map_lookup(value, &Value::Int(0))?;
-        let rhs = Self::map_lookup(value, &Value::Int(1))?;
+        let map_obj = heap.deref(addr);
+
+        let lhs = map_obj.map_lookup(Value::Int(0))?;
+        let rhs = map_obj.map_lookup(Value::Int(1))?;
 
         Ok((lhs, rhs))
     }
