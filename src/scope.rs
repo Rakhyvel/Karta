@@ -137,7 +137,7 @@ impl DefArena {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 /// Unique identifier of a definition
 pub struct DefId(u32);
 

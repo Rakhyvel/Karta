@@ -77,6 +77,7 @@ use crate::{
     debug::TreePrint,
     elaborate::{Declare, Elaboration, Resolve},
     interner::{AtomTable, StringLiteralTable, SymbolTable},
+    ir::Lowerer,
     pattern::PatternHeap,
     source::SourceFile,
     walker::AstWalker,
@@ -197,6 +198,12 @@ impl KartaContext {
 
         println!("\n");
         elab.debug();
+
+        let mut lowerer = Lowerer::new(&ast_heap, &elab);
+        let expr_slot = lowerer.lower(expr_ast);
+        println!("\n");
+        lowerer.debug();
+        println!("Expr slot: {expr_slot:?}");
 
         todo!("figure out how to eval")
     }

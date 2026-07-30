@@ -30,6 +30,14 @@ impl Elaboration {
         }
     }
 
+    pub fn define(&self, ast: AstId) -> Option<&DefId> {
+        self.defines.get(&ast)
+    }
+
+    pub fn refer(&self, ast: AstId) -> Option<&DefId> {
+        self.references.get(&ast)
+    }
+
     pub fn debug(&self) {
         println!("Scopes:");
         self.scopes.debug();
