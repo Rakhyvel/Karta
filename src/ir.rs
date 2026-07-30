@@ -35,7 +35,36 @@ pub enum Instr {
 pub enum Value {
     Undefined,
     Int(i64),
+    Float(f64),
+    Char(char),
     // TODO: Add more
+}
+
+impl Value {
+    /// Interpret this value as an integer. Does some basic conversions
+    pub fn as_int<T>(&self) -> Result<T, String>
+    where
+        T: From<i64>,
+    {
+        match self {
+            Value::Int(x) => Ok(T::from(*x)),
+            Value::Float(x) => Ok(T::from(*x as i64)),
+            Value::Char(x) => Ok(T::from(*x as i64)),
+            _ => Err(format!("cannot convert {:?} to int", self)),
+        }
+    }
+
+    /// Interpret this value as an integer. Does some basic conversions
+    pub fn as_float<T>(&self) -> Result<T, String>
+    where
+        T: From<f64>,
+    {
+        match self {
+            Value::Int(x) => Ok(T::from(*x as f64)),
+            Value::Float(x) => Ok(T::from(*x)),
+            _ => Err(format!("cannot convert {:?} to float", self)),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

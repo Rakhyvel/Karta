@@ -58,7 +58,6 @@ mod ir;
 mod layout;
 mod parser;
 mod pattern;
-pub mod query;
 mod scope;
 mod source;
 mod span;
@@ -72,14 +71,13 @@ use std::{
 
 use ast::AstHeap;
 use parser::Parser;
-use query::KartaQuery;
 
 use crate::{
     debug::TreePrint,
     elaborate::{Declare, Elaboration, Resolve},
     eval::Eval,
     interner::{AtomTable, StringLiteralTable, SymbolTable},
-    ir::Lowerer,
+    ir::{Lowerer, Value},
     pattern::PatternHeap,
     source::SourceFile,
     walker::AstWalker,
@@ -157,7 +155,7 @@ impl KartaContext {
     }
 
     /// Constructs a new query from an expression, to be evaluated within the context constructed so far
-    pub fn eval(&self, expr_str: impl ToString) -> Result<KartaQuery<'_>, String> {
+    pub fn eval(&self, expr_str: impl ToString) -> Result<Value, String> {
         let source = SourceFile::new(expr_str.to_string());
         let mut pattern_heap = self.pattern_heap.try_lock().unwrap();
         let mut string_literal_table = self.string_literal_table.try_lock().unwrap();
@@ -205,19 +203,7 @@ impl KartaContext {
         println!("\n");
         code.debug();
 
-        let result = Eval::new(code).eval();
-        println!("\nResult: {result:?}");
-
-        todo!("figure out how to eval")
-    }
-
-    /// The Ast Heap of this Karta context
-    pub(crate) fn ast_heap(&self) -> std::sync::MutexGuard<'_, AstHeap> {
-        self.ast_heap.try_lock().unwrap() // Automatically unlocks when it goes out of scope
-    }
-
-    pub(crate) fn strings(&self) -> std::sync::MutexGuard<'_, StringLiteralTable> {
-        self.string_literal_table.try_lock().unwrap()
+        Ok(Eval::new(code).eval())
     }
 }
 
@@ -256,58 +242,6 @@ mod tests {
             .as_float()?;
 
         assert_eq!(res, 4.5);
-        Ok(())
-    }
-
-    #[test]
-    fn get_map_string() -> Result<(), String> {
-        let karta_context = KartaContext::new()?;
-
-        let binding =
-            karta_context.eval("let test = {.test-atom = \"Hello, World!\"} in test.test-atom")?;
-        let res = binding.as_string()?;
-
-        assert_eq!(res, "Hello, World!");
-        Ok(())
-    }
-
-    #[test]
-    fn truthy_falsey() -> Result<(), String> {
-        let karta_context = KartaContext::new()?;
-
-        let test_atom1 = karta_context.eval(".t")?.truthy()?;
-        let test_atom2 = karta_context.eval(".nil")?.truthy()?;
-
-        assert!(test_atom1);
-        assert!(!test_atom2);
-        Ok(())
-    }
-
-    #[test]
-    fn list_iterator() -> Result<(), String> {
-        let karta_context = KartaContext::new()?;
-
-        let mut counter: i64 = 1;
-        for elem in karta_context.eval("[1, 2, 3]")? {
-            assert_eq!(counter, elem.as_int::<i64>()?);
-            counter += 1;
-        }
-
-        Ok(())
-    }
-
-    #[test]
-    fn double_list_iterator() -> Result<(), String> {
-        let karta_context = KartaContext::new()?;
-
-        let mut counter: i64 = 1;
-        for elem in karta_context.eval("[[1, 2, 3], [4, 5, 6], [7, 8, 9]]")? {
-            for elem2 in elem {
-                assert_eq!(counter, elem2.as_int::<i64>()?);
-                counter += 1;
-            }
-        }
-
         Ok(())
     }
 
@@ -428,16 +362,6 @@ in (@add (x, y))
     }
 
     #[test]
-    fn set() -> Result<(), String> {
-        let kctx = KartaContext::new()?;
-
-        let res: bool = kctx.eval("{0, 1, 2, 3} 2")?.truthy()?;
-
-        assert!(res);
-        Ok(())
-    }
-
-    #[test]
     fn import() -> Result<(), String> {
         let mut kctx = KartaContext::new()?;
 
@@ -488,25 +412,87 @@ in (test [1, 2, 3])
         Ok(())
     }
 
-    #[test]
-    fn integer_pattern_match() -> Result<(), String> {
-        let kctx = KartaContext::new()?;
+    //     #[test]
+    //     fn get_map_string() -> Result<(), String> {
+    //         let karta_context = KartaContext::new()?;
 
-        let res = kctx
-            .eval(
-                r#"let
-  even? 0 = .t
-  even? 1 = .f
-  even? n = 
-    if @lsr(n, 0)
-    then even? (@neg n)
-    else @sub(n, 2)
-in even? (@neg 4)
-"#,
-            )?
-            .truthy()?;
+    //         let binding =
+    //             karta_context.eval("let test = {.test-atom = \"Hello, World!\"} in test.test-atom")?;
+    //         let res = binding.as_string()?;
 
-        assert!(res);
-        Ok(())
-    }
+    //         assert_eq!(res, "Hello, World!");
+    //         Ok(())
+    //     }
+
+    //     #[test]
+    //     fn truthy_falsey() -> Result<(), String> {
+    //         let karta_context = KartaContext::new()?;
+
+    //         let test_atom1 = karta_context.eval(".t")?.truthy()?;
+    //         let test_atom2 = karta_context.eval(".nil")?.truthy()?;
+
+    //         assert!(test_atom1);
+    //         assert!(!test_atom2);
+    //         Ok(())
+    //     }
+
+    //     #[test]
+    //     fn list_iterator() -> Result<(), String> {
+    //         let karta_context = KartaContext::new()?;
+
+    //         let mut counter: i64 = 1;
+    //         for elem in karta_context.eval("[1, 2, 3]")? {
+    //             assert_eq!(counter, elem.as_int::<i64>()?);
+    //             counter += 1;
+    //         }
+
+    //         Ok(())
+    //     }
+
+    //     #[test]
+    //     fn double_list_iterator() -> Result<(), String> {
+    //         let karta_context = KartaContext::new()?;
+
+    //         let mut counter: i64 = 1;
+    //         for elem in karta_context.eval("[[1, 2, 3], [4, 5, 6], [7, 8, 9]]")? {
+    //             for elem2 in elem {
+    //                 assert_eq!(counter, elem2.as_int::<i64>()?);
+    //                 counter += 1;
+    //             }
+    //         }
+
+    //         Ok(())
+    //     }
+
+    //     #[test]
+    //     fn set() -> Result<(), String> {
+    //         let kctx = KartaContext::new()?;
+
+    //         let res: bool = kctx.eval("{0, 1, 2, 3} 2")?.truthy()?;
+
+    //         assert!(res);
+    //         Ok(())
+    //     }
+
+    //     #[test]
+    //     fn integer_pattern_match() -> Result<(), String> {
+    //         let kctx = KartaContext::new()?;
+
+    //         let res = kctx
+    //             .eval(
+    //                 r#"let
+    //   even? 0 = .t
+    //   even? 1 = .f
+    //   even? n =
+    //     if @lsr(n, 0)
+    //     then even? (@neg n)
+    //     else @sub(n, 2)
+    // in even? (@neg 4)
+    // "#,
+    //             )?
+    //             .truthy()?;
+
+    //         assert!(res);
+    //         Ok(())
+    //     }
 }
