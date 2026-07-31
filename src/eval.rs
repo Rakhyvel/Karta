@@ -1,22 +1,26 @@
 use crate::{
     builtin::Builtin,
-    ir::{Code, HeapSlot, Instr, Slot, Value},
+    ir::{FunctionId, HeapAddr, HeapObjKind, Instr, Program, Slot, Value},
 };
 
 pub struct Eval {
-    code: Code,
-    env: Env,
+    program: Program,
+    frame_stack: Vec<Frame>,
     heap: Heap,
 }
 
-struct Env {
+struct Frame {
+    func_id: FunctionId,
     slots: Vec<Value>,
+    ip: usize,
 }
 
-impl Env {
-    fn new(slot_count: u32) -> Self {
+impl Frame {
+    fn new(func_id: FunctionId, slot_count: u32) -> Self {
         Self {
+            func_id,
             slots: (0..slot_count).map(|_| Value::Undefined).collect(),
+            ip: 0,
         }
     }
 
@@ -51,60 +55,121 @@ impl Heap {
         Self { maps: Vec::new() }
     }
 
-    fn alloc_map(&mut self, obj: MapObj) -> HeapSlot {
-        let retval = HeapSlot::new(self.maps.len() as u32);
+    fn alloc_map(&mut self, obj: MapObj) -> HeapAddr {
+        let retval = HeapAddr::new(HeapObjKind::Map, self.maps.len() as u32);
         self.maps.push(obj);
         retval
     }
 
-    fn deref(&self, slot: HeapSlot) -> &MapObj {
+    fn alloc_closure(&mut self, obj: MapObj) -> HeapAddr {
+        let retval = HeapAddr::new(HeapObjKind::Map, self.maps.len() as u32);
+        self.maps.push(obj);
+        retval
+    }
+
+    fn deref(&self, slot: HeapAddr) -> &MapObj {
         &self.maps[slot.as_usize()]
     }
 }
 
 impl Eval {
-    pub fn new(code: Code) -> Self {
-        Self {
-            env: Env::new(code.slots_used),
-            code,
+    pub fn new(program: Program) -> Self {
+        let entry = program.entry;
+        let mut retval = Self {
+            frame_stack: Vec::new(),
+            program,
             heap: Heap::new(),
-        }
+        };
+        retval.push_frame(entry);
+        retval
     }
 
     pub fn eval(&mut self) -> Result<Value, String> {
-        for instr in self.code.instructions.iter() {
-            match instr {
-                Instr::Const { dst, value } => self.env.store(*dst, *value),
+        loop {
+            let frame_idx = self.frame_stack.len() - 1;
 
-                Instr::MakeMap { dst, pairs } => {
-                    let map = MapObj {
-                        pairs: pairs
-                            .iter()
-                            .map(|(k, v)| (self.env.load(*k), self.env.load(*v)))
-                            .collect(),
-                    };
-                    let map_slot = self.heap.alloc_map(map);
-                    self.env.store(*dst, Value::Map(map_slot))
+            let (func_id, ip) = {
+                let frame = &self.frame_stack[frame_idx];
+                (frame.func_id, frame.ip)
+            };
+
+            let instructions = &self.program.funcs[func_id.as_usize()].instructions;
+            if ip >= instructions.len() {
+                if self.frame_stack.len() == 1 {
+                    break Ok(self.load_retval());
                 }
-
-                Instr::Apply { dst, lhs, rhs } => {
-                    let lhs = self.env.load(*lhs);
-                    let rhs = self.env.load(*rhs);
-
-                    let result = match lhs {
-                        Value::Map(addr) => self.heap.deref(addr).map_lookup(rhs)?,
-                        Value::Builtin(builtin) => match builtin {
-                            Builtin::Add => self.add(rhs)?,
-                        },
-                        _ => panic!("can't apply to a {lhs:?}"),
-                    };
-
-                    self.env.store(*dst, result)
-                }
+                self.pop_frame();
+                continue;
             }
-        }
+            let instr = instructions[ip].clone();
 
-        Ok(self.env.load(self.code.result))
+            self.frame_stack[frame_idx].ip += 1;
+
+            self.execute_instruction(instr)?;
+        }
+    }
+
+    fn execute_instruction(&mut self, instr: Instr) -> Result<(), String> {
+        match instr {
+            Instr::Const { dst, value } => self.store(dst, value),
+
+            Instr::MakeMap { dst, pairs } => {
+                let map = MapObj {
+                    pairs: pairs
+                        .iter()
+                        .map(|(k, v)| (self.load(*k), self.load(*v)))
+                        .collect(),
+                };
+                let map_slot = self.heap.alloc_map(map);
+                self.store(dst, Value::Map(map_slot))
+            }
+
+            Instr::MakeClosure { dst, function } => {}
+
+            Instr::Apply { dst, lhs, rhs } => {
+                let lhs = self.load(lhs);
+                let rhs = self.load(rhs);
+
+                let result = self.apply(lhs, rhs)?;
+
+                self.store(dst, result)
+            }
+        };
+        Ok(())
+    }
+
+    fn load(&self, slot: Slot) -> Value {
+        let frame_idx = self.frame_stack.len() - 1;
+        self.frame_stack[frame_idx].load(slot)
+    }
+
+    fn store(&mut self, slot: Slot, value: Value) {
+        let frame_idx = self.frame_stack.len() - 1;
+        self.frame_stack[frame_idx].store(slot, value);
+    }
+
+    fn load_retval(&self) -> Value {
+        let frame_idx = self.frame_stack.len() - 1;
+        let func_id = self.frame_stack[frame_idx].func_id;
+        let result_slot = self.program.funcs[func_id.as_usize()].result;
+        self.frame_stack[frame_idx].load(result_slot)
+    }
+
+    fn push_frame(&mut self, func_id: FunctionId) {
+        let slot_count = self.program.funcs[func_id.as_usize()].slots_used;
+        self.frame_stack.push(Frame::new(func_id, slot_count));
+    }
+
+    fn pop_frame(&mut self) {
+        self.frame_stack.pop();
+    }
+
+    fn apply(&self, lhs: Value, rhs: Value) -> Result<Value, String> {
+        match lhs {
+            Value::Map(addr) => self.heap.deref(addr).map_lookup(rhs),
+            Value::Builtin(Builtin::Add) => self.add(rhs),
+            _ => panic!("can't apply to a {lhs:?}"),
+        }
     }
 
     fn add(&self, args: Value) -> Result<Value, String> {

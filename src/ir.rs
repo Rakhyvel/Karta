@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap};
 
 use crate::{
     ast::{Ast, AstHeap, AstId},
@@ -8,13 +8,16 @@ use crate::{
     scope::DefId,
 };
 
-pub struct Code {
+pub struct Function {
     pub instructions: Vec<Instr>,
     pub slots_used: u32,
     pub result: Slot,
+
+    pub params: Vec<Slot>,
+    pub captures: Vec<DefId>,
 }
 
-impl Code {
+impl Function {
     pub fn debug(&self) {
         println!("Slots used: {}", self.slots_used);
         println!("Result: {:?}", self.result);
@@ -25,11 +28,26 @@ impl Code {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FunctionId(u32);
+
+impl FunctionId {
+    pub fn new(id: u32) -> Self {
+        Self(id)
+    }
+
+    pub fn as_usize(self) -> usize {
+        self.0 as usize
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Instr {
     Const { dst: Slot, value: Value },
 
     MakeMap { dst: Slot, pairs: Vec<(Slot, Slot)> },
+
+    MakeClosure { dst: Slot, function: FunctionId },
 
     Apply { dst: Slot, lhs: Slot, rhs: Slot },
 }
@@ -42,7 +60,7 @@ pub enum Value {
     Char(char),
     Atom(AtomId),
     Builtin(Builtin),
-    Map(HeapSlot),
+    Map(HeapAddr),
 }
 
 impl Value {
@@ -82,25 +100,33 @@ impl Slot {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct HeapSlot(u32);
+pub enum HeapObjKind {
+    Map,
+    Closure,
+}
 
-impl HeapSlot {
-    pub fn new(id: u32) -> Self {
-        Self(id)
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HeapAddr(HeapObjKind, u32);
+
+impl HeapAddr {
+    pub fn new(kind: HeapObjKind, id: u32) -> Self {
+        Self(kind, id)
     }
 
     pub fn as_usize(self) -> usize {
-        self.0 as usize
+        self.1 as usize
     }
+}
+
+pub struct Program {
+    pub funcs: Vec<Function>,
+    pub entry: FunctionId,
 }
 
 pub struct Lowerer<'a> {
     asts: &'a AstHeap,
     elab: &'a Elaboration,
-
-    def_map: HashMap<DefId, Slot>,
-    instructions: Vec<Instr>,
-    slots_used: u32,
+    funcs: RefCell<Vec<Function>>,
 }
 
 impl<'a> Lowerer<'a> {
@@ -108,18 +134,62 @@ impl<'a> Lowerer<'a> {
         Self {
             asts,
             elab,
-            def_map: HashMap::new(),
-            instructions: Vec::new(),
-            slots_used: 0,
+            funcs: RefCell::new(Vec::new()),
         }
     }
 
-    pub fn lower(mut self, id: AstId) -> Code {
-        let result = self.lower_ast(id);
-        Code {
-            slots_used: self.slots_used,
-            instructions: self.instructions,
+    pub fn lower(&mut self, root: AstId) -> Program {
+        let mut f = FunctionLowerer::new(self.asts, self.elab, &self.funcs);
+
+        let result = f.lower_ast(root);
+
+        let root_function = Function {
+            instructions: f.instructions,
+            slots_used: f.slots_used,
             result,
+            params: f.params,
+            captures: f.captures,
+        };
+
+        let mut funcs = self.funcs.borrow_mut();
+
+        let entry = FunctionId(funcs.len() as u32);
+        funcs.push(root_function);
+
+        Program {
+            funcs: funcs.drain(..).collect(),
+            entry,
+        }
+    }
+}
+
+struct FunctionLowerer<'a> {
+    asts: &'a AstHeap,
+    elab: &'a Elaboration,
+    funcs: &'a RefCell<Vec<Function>>,
+
+    def_map: HashMap<DefId, Slot>,
+    instructions: Vec<Instr>,
+    slots_used: u32,
+    params: Vec<Slot>,
+    captures: Vec<DefId>,
+}
+
+impl<'a> FunctionLowerer<'a> {
+    pub fn new(
+        asts: &'a AstHeap,
+        elab: &'a Elaboration,
+        funcs: &'a RefCell<Vec<Function>>,
+    ) -> Self {
+        Self {
+            asts,
+            elab,
+            funcs,
+            def_map: HashMap::new(),
+            instructions: Vec::new(),
+            slots_used: 0,
+            params: Vec::new(),
+            captures: Vec::new(),
         }
     }
 
@@ -127,38 +197,11 @@ impl<'a> Lowerer<'a> {
         let ast = self.asts.get(id).expect("invalid AST id");
 
         match ast {
-            Ast::Int(n) => {
-                let slot = self.new_slot();
-                self.emit(Instr::Const {
-                    dst: slot,
-                    value: Value::Int(*n),
-                });
-                slot
-            }
-            Ast::Float(n) => {
-                let slot = self.new_slot();
-                self.emit(Instr::Const {
-                    dst: slot,
-                    value: Value::Float(*n),
-                });
-                slot
-            }
-            Ast::Atom(id) => {
-                let slot = self.new_slot();
-                self.emit(Instr::Const {
-                    dst: slot,
-                    value: Value::Atom(*id),
-                });
-                slot
-            }
-            Ast::BuiltinFunction(builtin) => {
-                let slot = self.new_slot();
-                self.emit(Instr::Const {
-                    dst: slot,
-                    value: Value::Builtin(*builtin),
-                });
-                slot
-            }
+            Ast::Int(n) => self.lower_const(Value::Int(*n)),
+            Ast::Float(n) => self.lower_const(Value::Float(*n)),
+            Ast::Atom(id) => self.lower_const(Value::Atom(*id)),
+            Ast::BuiltinFunction(builtin) => self.lower_const(Value::Builtin(*builtin)),
+
             Ast::Map(pairs) => {
                 let dst = self.new_slot();
                 let pairs = pairs
@@ -168,6 +211,7 @@ impl<'a> Lowerer<'a> {
                 self.emit(Instr::MakeMap { dst, pairs });
                 dst
             }
+
             Ast::Tuple(elems) => {
                 let dst = self.new_slot();
                 let pairs = elems
@@ -186,6 +230,7 @@ impl<'a> Lowerer<'a> {
                 self.emit(Instr::MakeMap { dst, pairs });
                 dst
             }
+
             Ast::Identifier(_) => {
                 let def = self.elab.refer(id).expect("should exist");
                 *self
@@ -193,6 +238,7 @@ impl<'a> Lowerer<'a> {
                     .get(def)
                     .expect("def should be put by some binding")
             }
+
             Ast::Apply(lhs, rhs) => {
                 let dst = self.new_slot();
                 let lhs = self.lower_ast(*lhs);
@@ -200,20 +246,65 @@ impl<'a> Lowerer<'a> {
                 self.emit(Instr::Apply { dst, lhs, rhs });
                 dst
             }
+
             Ast::Let(bindings, expr) => {
                 for binding in bindings {
                     _ = self.lower_ast(*binding)
                 }
                 self.lower_ast(*expr)
             }
+
             Ast::Binding { rhs, .. } => {
                 let def = self.elab.define(id).expect("asts gotta define something!");
                 let slot = self.lower_ast(*rhs);
                 self.def_map.insert(*def, slot);
                 slot
             }
+
+            Ast::Lambda(param, body) => {
+                let function = {
+                    let mut f = Self::new(self.asts, self.elab, self.funcs);
+
+                    let param_slot = f.new_slot();
+
+                    let def = self.elab.pattern_define(*param);
+                    f.def_map.insert(def, param_slot);
+                    f.params.push(param_slot);
+
+                    let result = f.lower_ast(*body);
+
+                    Function {
+                        slots_used: f.slots_used,
+                        instructions: f.instructions,
+                        result,
+                        params: f.params,
+                        captures: f.captures,
+                    }
+                };
+
+                let func_id = {
+                    let mut funcs = self.funcs.borrow_mut();
+                    let id = FunctionId(funcs.len() as u32);
+                    funcs.push(function);
+                    id
+                };
+
+                let dst = self.new_slot();
+                self.emit(Instr::MakeClosure {
+                    dst,
+                    function: func_id,
+                });
+                dst
+            }
+
             _ => todo!("not implemented: {:?}", ast),
         }
+    }
+
+    fn lower_const(&mut self, value: Value) -> Slot {
+        let dst = self.new_slot();
+        self.emit(Instr::Const { dst, value });
+        dst
     }
 
     fn new_slot(&mut self) -> Slot {

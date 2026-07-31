@@ -28,7 +28,7 @@ impl PatternHeap {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 /// Unique identifier of an Pattern expression in the context's vector of Asts
 pub struct PatternId(u32);
 

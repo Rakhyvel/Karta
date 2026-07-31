@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::{
     ast::{Ast, AstHeap, AstId},
     interner::SymbolTable,
-    pattern::{PatternHeap, PatternId},
+    pattern::{Pattern, PatternHeap, PatternId},
     scope::{DefArena, DefId, DefKind, ScopeArena, ScopeId},
     walker::AstVisitor,
 };
@@ -14,8 +14,12 @@ pub struct Elaboration {
 
     /// Maps ASTs to the scopes that they exist within
     ast_scopes: HashMap<AstId, ScopeId>,
+    /// Maps pattern to the scopes that they exist within
+    pattern_scopes: HashMap<PatternId, ScopeId>,
     /// Maps ASTs to the Defs that they define
     defines: HashMap<AstId, DefId>,
+    /// Maps patterns to the Defs that they define
+    pattern_defines: HashMap<PatternId, DefId>,
     /// Maps ASTs to the Defs that they refer to
     references: HashMap<AstId, DefId>,
 }
@@ -26,13 +30,22 @@ impl Elaboration {
             scopes: ScopeArena::new(),
             defs: DefArena::new(),
             ast_scopes: HashMap::new(),
+            pattern_scopes: HashMap::new(),
             defines: HashMap::new(),
+            pattern_defines: HashMap::new(),
             references: HashMap::new(),
         }
     }
 
     pub fn define(&self, ast: AstId) -> Option<&DefId> {
         self.defines.get(&ast)
+    }
+
+    pub fn pattern_define(&self, id: PatternId) -> DefId {
+        *self
+            .pattern_defines
+            .get(&id)
+            .expect("pattern ID should map to a valid def")
     }
 
     pub fn refer(&self, ast: AstId) -> Option<&DefId> {
@@ -90,6 +103,7 @@ impl<'a> AstVisitor for Declare<'a> {
                 let new_scope = self.elab.scopes.new_scope(Some(this_scope_id));
                 self.scope_stack.push(new_scope)
             }
+
             Ast::Binding { name, params, rhs } => {
                 let def_id =
                     self.elab
@@ -98,6 +112,12 @@ impl<'a> AstVisitor for Declare<'a> {
                 self.elab.scopes.insert(this_scope_id, *name, def_id);
                 self.elab.defines.insert(id, def_id);
             }
+
+            Ast::Lambda(_, _) => {
+                let new_scope = self.elab.scopes.new_scope(Some(this_scope_id));
+                self.scope_stack.push(new_scope);
+            }
+
             _ => {}
         }
 
@@ -114,7 +134,25 @@ impl<'a> AstVisitor for Declare<'a> {
         Ok(())
     }
 
-    fn enter_pattern(&mut self, _id: PatternId) -> Result<(), Self::Error> {
+    fn enter_pattern(&mut self, id: PatternId) -> Result<(), Self::Error> {
+        let this_scope_id = *self
+            .scope_stack
+            .last()
+            .expect("scope stack shouldn't be empty");
+
+        // stamp every single pattern that comes through here with the current scope
+        self.elab.pattern_scopes.insert(id, this_scope_id);
+
+        let pattern = self.patterns.get(id).expect("pattern should exist");
+
+        match pattern {
+            Pattern::Identifier(name) => {
+                let param_def_id = self.elab.defs.create_def(0, DefKind::Parameter, None);
+                self.elab.scopes.insert(this_scope_id, *name, param_def_id);
+                self.elab.pattern_defines.insert(id, param_def_id);
+            }
+        }
+
         Ok(())
     }
 

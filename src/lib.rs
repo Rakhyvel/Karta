@@ -200,11 +200,10 @@ impl KartaContext {
         println!("\n");
         elab.debug();
 
-        let code = Lowerer::new(&ast_heap, &elab).lower(expr_ast);
+        let program = Lowerer::new(&ast_heap, &elab).lower(expr_ast);
         println!("\n");
-        code.debug();
 
-        Eval::new(code).eval()
+        Eval::new(program).eval()
     }
 }
 
