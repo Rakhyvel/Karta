@@ -1,6 +1,6 @@
 use crate::{
     builtin::Builtin,
-    ir::{FunctionId, HeapAddr, HeapObjKind, Instr, Program, Slot, Value},
+    ir::{FunctionId, HeapAddr, Instr, Program, Slot, Value},
 };
 
 pub struct Eval {
@@ -14,6 +14,7 @@ struct Frame {
     func_id: FunctionId,
     // TODO: captured closure heap addr
     slots: Vec<Value>,
+    /// The instruction pointer into this frame's function's thingy
     ip: usize,
     /// Relative to the _CALLER_'s frame
     return_slot: Slot,
@@ -39,50 +40,41 @@ impl Frame {
 }
 
 // TODO: Make this an enum `HeapObj`, then HeapAddr just refers to one of these
-struct MapObj {
-    pairs: Vec<(Value, Value)>,
+enum HeapObj {
+    Map(Vec<(Value, Value)>),
+    Closure(FunctionId, Vec<Value>),
 }
 
-impl MapObj {
+impl HeapObj {
     fn map_lookup(&self, key: Value) -> Result<Value, String> {
-        self.pairs
-            .iter()
-            .find_map(|(k, v)| (*k == key).then_some(*v))
-            .ok_or_else(|| format!("map didn't contain key {key:?}"))
+        if let HeapObj::Map(pairs) = self {
+            pairs
+                .iter()
+                .find_map(|(k, v)| (*k == key).then_some(*v))
+                .ok_or_else(|| format!("map didn't contain key {key:?}"))
+        } else {
+            Err(String::from("bad"))
+        }
     }
 }
 
 struct Heap {
-    maps: Vec<MapObj>,
-    funcs: Vec<FunctionId>,
+    objs: Vec<HeapObj>,
 }
 
 impl Heap {
     fn new() -> Self {
-        Self {
-            maps: Vec::new(),
-            funcs: Vec::new(),
-        }
+        Self { objs: Vec::new() }
     }
 
-    fn alloc_map(&mut self, obj: MapObj) -> HeapAddr {
-        let retval = HeapAddr::new(HeapObjKind::Map, self.maps.len() as u32);
-        self.maps.push(obj);
+    fn alloc(&mut self, obj: HeapObj) -> HeapAddr {
+        let retval = HeapAddr::new(self.objs.len() as u32);
+        self.objs.push(obj);
         retval
     }
 
-    fn alloc_closure(&mut self, func_id: FunctionId) -> HeapAddr {
-        let retval = HeapAddr::new(HeapObjKind::Closure, self.funcs.len() as u32);
-        self.funcs.push(func_id);
-        retval
-    }
-
-    fn deref(&self, slot: HeapAddr) -> &MapObj {
-        &self.maps[slot.as_usize()]
-    }
-
-    fn deref_func(&self, slot: HeapAddr) -> &FunctionId {
-        &self.funcs[slot.as_usize()]
+    fn deref(&self, slot: HeapAddr) -> &HeapObj {
+        &self.objs[slot.as_usize()]
     }
 }
 
@@ -95,7 +87,11 @@ impl Eval {
             heap: Heap::new(),
             result: Value::Undefined,
         };
-        retval.push_frame(entry, Value::Undefined, Slot::new(0));
+
+        let slot_count = retval.program.funcs[entry.as_usize()].slots_used;
+        let frame = Frame::new(entry, slot_count, Slot::new(0));
+        retval.frame_stack.push(frame);
+
         retval
     }
 
@@ -125,18 +121,20 @@ impl Eval {
             Instr::Const { dst, value } => self.store(dst, value),
 
             Instr::MakeMap { dst, pairs } => {
-                let map = MapObj {
-                    pairs: pairs
+                let map = HeapObj::Map(
+                    pairs
                         .iter()
                         .map(|(k, v)| (self.load(*k), self.load(*v)))
                         .collect(),
-                };
-                let map_slot = self.heap.alloc_map(map);
+                );
+                let map_slot = self.heap.alloc(map);
                 self.store(dst, Value::Map(map_slot))
             }
 
             Instr::MakeClosure { dst, function } => {
-                let func_addr = self.heap.alloc_closure(function);
+                let captures = &self.program.funcs[function.as_usize()].captures;
+                let values = captures.iter().map(|(_, src)| self.load(*src)).collect();
+                let func_addr = self.heap.alloc(HeapObj::Closure(function, values));
                 self.store(dst, Value::Closure(func_addr))
             }
 
@@ -147,15 +145,15 @@ impl Eval {
                 self.apply(dst, lhs, rhs)?;
             }
 
-            Instr::Ret => {
+            Instr::Ret { src } => {
                 let frame = self.frame_stack.pop().unwrap();
-                let retval = frame.slots[1]; // retval = slot 1
+                let retval = frame.load(src);
                 self.store(frame.return_slot, retval);
             }
 
-            Instr::RetEval => {
+            Instr::RetEval { src } => {
                 let frame = self.frame_stack.pop().unwrap();
-                self.result = frame.slots[0]; // evalval = slot 0 (no args)
+                self.result = frame.load(src);
             }
         };
         Ok(())
@@ -171,19 +169,27 @@ impl Eval {
         self.frame_stack[frame_idx].store(slot, value);
     }
 
-    fn push_frame(&mut self, func_id: FunctionId, arg: Value, return_slot: Slot) {
-        let slot_count = self.program.funcs[func_id.as_usize()].slots_used;
-        let mut frame = Frame::new(func_id, slot_count, return_slot);
-        frame.slots[0] = arg; // Store arg
-        self.frame_stack.push(frame);
-    }
-
     fn apply(&mut self, dst: Slot, lhs: Value, rhs: Value) -> Result<(), String> {
         match lhs {
             Value::Map(addr) => self.store(dst, self.heap.deref(addr).map_lookup(rhs)?),
             Value::Closure(addr) => {
-                let func_id = self.heap.deref_func(addr);
-                self.push_frame(*func_id, rhs, dst);
+                let HeapObj::Closure(func_id, values) = self.heap.deref(addr) else {
+                    todo!()
+                };
+
+                let func = &self.program.funcs[func_id.as_usize()];
+                let mut frame = Frame::new(*func_id, func.slots_used, dst);
+                frame.slots[0] = rhs; // Store arg
+
+                for (i, (dst, _)) in self.program.funcs[func_id.as_usize()]
+                    .captures
+                    .iter()
+                    .enumerate()
+                {
+                    frame.store(*dst, values[i]);
+                }
+
+                self.frame_stack.push(frame);
             }
             Value::Builtin(Builtin::Add) => self.store(dst, self.add(rhs)?),
             _ => panic!("can't apply to a {lhs:?}"),

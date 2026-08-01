@@ -12,16 +12,14 @@ use crate::{
 pub struct Function {
     pub instructions: Vec<Instr>,
     pub slots_used: u32,
-    pub result: Slot,
-
-    pub params: Vec<Slot>,
-    pub captures: Vec<DefId>,
+    /// The slots in the parent scope where these can be found
+    pub captures: Vec<(Slot, Slot)>,
 }
 
 impl Function {
     pub fn debug(&self) {
         println!("Slots used: {}", self.slots_used);
-        println!("Result: {:?}", self.result);
+        println!("Captures: {:?}", self.captures);
         println!("Instructions:");
         for instr in self.instructions.iter() {
             println!("{instr:?}");
@@ -33,10 +31,6 @@ impl Function {
 pub struct FunctionId(u32);
 
 impl FunctionId {
-    pub fn new(id: u32) -> Self {
-        Self(id)
-    }
-
     pub fn as_usize(self) -> usize {
         self.0 as usize
     }
@@ -52,8 +46,8 @@ pub enum Instr {
 
     Apply { dst: Slot, lhs: Slot, rhs: Slot },
 
-    Ret,
-    RetEval,
+    Ret { src: Slot },
+    RetEval { src: Slot },
 }
 
 #[derive(Debug, Clone, PartialEq, Copy)]
@@ -95,7 +89,7 @@ impl Value {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Slot(u32);
 
 impl Slot {
@@ -108,22 +102,98 @@ impl Slot {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum HeapObjKind {
-    Map,
-    Closure,
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct LowerScopeId(u32);
+
+impl LowerScopeId {
+    /// Convert a LowerScopeId to a u32
+    pub(crate) fn as_u32(&self) -> u32 {
+        self.0
+    }
+}
+
+struct LowerScopeArena {
+    lower_scopes: Vec<LowerScope>,
+}
+
+impl LowerScopeArena {
+    fn new() -> Self {
+        Self {
+            lower_scopes: Vec::new(),
+        }
+    }
+
+    fn new_scope(&mut self, parent: Option<LowerScopeId>) -> LowerScopeId {
+        let id = LowerScopeId(self.lower_scopes.len() as u32);
+        self.lower_scopes.push(LowerScope::new(parent));
+        id
+    }
+
+    fn get_scope(&self, scope_id: LowerScopeId) -> &LowerScope {
+        &self.lower_scopes[scope_id.as_u32() as usize]
+    }
+
+    fn get_scope_mut(&mut self, scope_id: LowerScopeId) -> &mut LowerScope {
+        &mut self.lower_scopes[scope_id.as_u32() as usize]
+    }
+
+    fn lookup(&self, def: DefId, scope: LowerScopeId) -> Option<(Slot, u32)> {
+        let mut depth = 0;
+        let mut curr_scope: Option<LowerScopeId> = Some(scope);
+
+        while let Some(some_curr_scope) = curr_scope {
+            let scope = self.get_scope(some_curr_scope);
+
+            if let Some(def) = scope.get_slot(def) {
+                return Some((*def, depth));
+            }
+
+            curr_scope = scope.parent();
+            depth += 1;
+        }
+
+        None
+    }
+
+    fn insert(&mut self, scope_id: LowerScopeId, key: DefId, slot: Slot) {
+        let scope_ref = self.get_scope_mut(scope_id);
+        scope_ref.def_map.insert(key, slot);
+    }
+}
+
+#[derive(Default)]
+struct LowerScope {
+    def_map: HashMap<DefId, Slot>,
+    parent: Option<LowerScopeId>,
+}
+
+impl LowerScope {
+    fn new(parent: Option<LowerScopeId>) -> Self {
+        Self {
+            def_map: HashMap::new(),
+            parent,
+        }
+    }
+
+    fn parent(&self) -> Option<LowerScopeId> {
+        self.parent
+    }
+
+    fn get_slot(&self, def: DefId) -> Option<&Slot> {
+        self.def_map.get(&def)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct HeapAddr(pub HeapObjKind, pub u32);
+pub struct HeapAddr(u32);
 
 impl HeapAddr {
-    pub fn new(kind: HeapObjKind, id: u32) -> Self {
-        Self(kind, id)
+    pub fn new(id: u32) -> Self {
+        Self(id)
     }
 
     pub fn as_usize(self) -> usize {
-        self.1 as usize
+        self.0 as usize
     }
 }
 
@@ -135,7 +205,26 @@ pub struct Program {
 pub struct Lowerer<'a> {
     asts: &'a AstHeap,
     elab: &'a Elaboration,
-    funcs: RefCell<Vec<Function>>,
+    funcs: Vec<Function>,
+    scopes: LowerScopeArena,
+    stack: Vec<FnState>,
+}
+
+struct FnState {
+    scope: LowerScopeId,
+    slots_used: u32,
+    captures: Vec<(Slot, Slot)>,
+    instructions: Vec<Instr>,
+}
+
+impl FnState {
+    fn into_function(self) -> Function {
+        Function {
+            instructions: self.instructions,
+            slots_used: self.slots_used,
+            captures: self.captures,
+        }
+    }
 }
 
 impl<'a> Lowerer<'a> {
@@ -143,64 +232,30 @@ impl<'a> Lowerer<'a> {
         Self {
             asts,
             elab,
-            funcs: RefCell::new(Vec::new()),
+            funcs: Vec::new(),
+            scopes: LowerScopeArena::new(),
+            stack: Vec::new(),
         }
     }
 
     pub fn lower(&mut self, root: AstId) -> Program {
-        let mut f = FunctionLowerer::new(self.asts, self.elab, &self.funcs);
+        self.push_fn(None);
+        let body_slot = self.lower_ast(root);
+        self.emit(RetEval { src: body_slot });
 
-        let result = f.lower_ast(root);
+        let root_function = self.pop_fn().into_function();
 
-        f.emit(RetEval);
+        let entry = FunctionId(self.funcs.len() as u32);
+        self.funcs.push(root_function);
 
-        let root_function = Function {
-            instructions: f.instructions,
-            slots_used: f.slots_used,
-            result,
-            params: f.params,
-            captures: f.captures,
-        };
-
-        let mut funcs = self.funcs.borrow_mut();
-
-        let entry = FunctionId(funcs.len() as u32);
-        funcs.push(root_function);
+        println!("\nThem all lowered:");
+        for func in &self.funcs {
+            func.debug();
+        }
 
         Program {
-            funcs: funcs.drain(..).collect(),
+            funcs: self.funcs.drain(..).collect(),
             entry,
-        }
-    }
-}
-
-struct FunctionLowerer<'a> {
-    asts: &'a AstHeap,
-    elab: &'a Elaboration,
-    funcs: &'a RefCell<Vec<Function>>,
-
-    def_map: HashMap<DefId, Slot>,
-    instructions: Vec<Instr>,
-    slots_used: u32,
-    params: Vec<Slot>,
-    captures: Vec<DefId>,
-}
-
-impl<'a> FunctionLowerer<'a> {
-    pub fn new(
-        asts: &'a AstHeap,
-        elab: &'a Elaboration,
-        funcs: &'a RefCell<Vec<Function>>,
-    ) -> Self {
-        Self {
-            asts,
-            elab,
-            funcs,
-            def_map: HashMap::new(),
-            instructions: Vec::new(),
-            slots_used: 0,
-            params: Vec::new(),
-            captures: Vec::new(),
         }
     }
 
@@ -244,10 +299,7 @@ impl<'a> FunctionLowerer<'a> {
 
             Ast::Identifier(_) => {
                 let def = self.elab.refer(id).expect("should exist");
-                *self
-                    .def_map
-                    .get(def)
-                    .expect("def should be put by some binding")
+                self.resolve(*def, self.stack.len() - 1)
             }
 
             Ast::Apply(lhs, rhs) => {
@@ -268,36 +320,28 @@ impl<'a> FunctionLowerer<'a> {
             Ast::Binding { rhs, .. } => {
                 let def = self.elab.define(id).expect("asts gotta define something!");
                 let slot = self.lower_ast(*rhs);
-                self.def_map.insert(*def, slot);
+                self.scopes.insert(self.top_fn().scope, *def, slot);
                 slot
             }
 
             Ast::Lambda(param, body) => {
                 let function = {
-                    let mut f = Self::new(self.asts, self.elab, self.funcs);
+                    self.push_fn(Some(self.top_fn().scope));
 
-                    let param_slot = f.new_slot();
+                    let param_slot = self.new_slot();
 
                     let def = self.elab.pattern_define(*param);
-                    f.def_map.insert(def, param_slot);
-                    f.params.push(param_slot);
+                    self.scopes.insert(self.top_fn().scope, def, param_slot);
 
-                    let result = f.lower_ast(*body);
-                    f.emit(Instr::Ret);
+                    let body_slot = self.lower_ast(*body);
+                    self.emit(Instr::Ret { src: body_slot });
 
-                    Function {
-                        slots_used: f.slots_used,
-                        instructions: f.instructions,
-                        result,
-                        params: f.params,
-                        captures: f.captures,
-                    }
+                    self.pop_fn().into_function()
                 };
 
                 let func_id = {
-                    let mut funcs = self.funcs.borrow_mut();
-                    let id = FunctionId(funcs.len() as u32);
-                    funcs.push(function);
+                    let id = FunctionId(self.funcs.len() as u32);
+                    self.funcs.push(function);
                     id
                 };
 
@@ -305,6 +349,7 @@ impl<'a> FunctionLowerer<'a> {
                 self.emit(Instr::MakeClosure {
                     dst,
                     function: func_id,
+                    // Needs to copy closure heap slots <= locals from here
                 });
                 dst
             }
@@ -319,13 +364,49 @@ impl<'a> FunctionLowerer<'a> {
         dst
     }
 
+    fn push_fn(&mut self, parent: Option<LowerScopeId>) {
+        self.stack.push(FnState {
+            scope: self.scopes.new_scope(parent),
+            slots_used: 0,
+            captures: Vec::new(),
+            instructions: Vec::new(),
+        })
+    }
+
+    fn pop_fn(&mut self) -> FnState {
+        self.stack.pop().unwrap()
+    }
+
+    fn top_fn(&self) -> &FnState {
+        self.stack.last().unwrap()
+    }
+
+    fn top_fn_mut(&mut self) -> &mut FnState {
+        self.stack.last_mut().unwrap()
+    }
+
+    fn resolve(&mut self, def: DefId, level: usize) -> Slot {
+        if let Some(slot) = self.scopes.get_scope(self.stack[level].scope).get_slot(def) {
+            return *slot;
+        }
+
+        let parent_slot = self.resolve(def, level - 1);
+        let dst = self.new_slot_at(level);
+        self.stack[level].captures.push((dst, parent_slot));
+        dst
+    }
+
     fn new_slot(&mut self) -> Slot {
-        let retval = Slot(self.slots_used);
-        self.slots_used += 1;
+        self.new_slot_at(self.stack.len() - 1)
+    }
+
+    fn new_slot_at(&mut self, level: usize) -> Slot {
+        let retval = Slot(self.stack[level].slots_used);
+        self.stack[level].slots_used += 1;
         retval
     }
 
     fn emit(&mut self, instr: Instr) {
-        self.instructions.push(instr);
+        self.top_fn_mut().instructions.push(instr);
     }
 }
