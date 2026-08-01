@@ -14,8 +14,6 @@ pub struct Elaboration {
 
     /// Maps ASTs to the scopes that they exist within
     ast_scopes: HashMap<AstId, ScopeId>,
-    /// Maps pattern to the scopes that they exist within
-    pattern_scopes: HashMap<PatternId, ScopeId>,
     /// Maps ASTs to the Defs that they define
     defines: HashMap<AstId, DefId>,
     /// Maps patterns to the Defs that they define
@@ -30,15 +28,14 @@ impl Elaboration {
             scopes: ScopeArena::new(),
             defs: DefArena::new(),
             ast_scopes: HashMap::new(),
-            pattern_scopes: HashMap::new(),
             defines: HashMap::new(),
             pattern_defines: HashMap::new(),
             references: HashMap::new(),
         }
     }
 
-    pub fn define(&self, ast: AstId) -> Option<&DefId> {
-        self.defines.get(&ast)
+    pub fn define(&self, ast: AstId) -> DefId {
+        *self.defines.get(&ast).unwrap()
     }
 
     pub fn pattern_define(&self, id: PatternId) -> DefId {
@@ -48,19 +45,8 @@ impl Elaboration {
             .expect("pattern ID should map to a valid def")
     }
 
-    pub fn refer(&self, ast: AstId) -> Option<&DefId> {
-        self.references.get(&ast)
-    }
-
-    pub fn debug(&self) {
-        println!("Scopes:");
-        self.scopes.debug();
-        println!("\nDefs:");
-        self.defs.debug();
-        println!("\nRefs:");
-        for (ast_id, def_id) in self.references.iter() {
-            println!("{ast_id:?} -> {def_id:?}");
-        }
+    pub fn refer(&self, ast: AstId) -> DefId {
+        *self.references.get(&ast).unwrap()
     }
 }
 
@@ -85,6 +71,10 @@ impl<'a> Declare<'a> {
     }
 }
 
+fn opens_scope(ast: &Ast) -> bool {
+    matches!(ast, Ast::Let(..) | Ast::Lambda(..))
+}
+
 impl<'a> AstVisitor for Declare<'a> {
     type Error = String;
 
@@ -94,31 +84,27 @@ impl<'a> AstVisitor for Declare<'a> {
             .last()
             .expect("scope stack shouldn't be empty");
 
-        // stamp every single AST that comes through here with the current scope
-        self.elab.ast_scopes.insert(id, this_scope_id);
-
         let ast = self.asts.get(id).expect("got an invalid AST id");
-        match ast {
-            Ast::Let(_, _) => {
-                let new_scope = self.elab.scopes.new_scope(Some(this_scope_id));
-                self.scope_stack.push(new_scope)
-            }
 
-            Ast::Binding { name, params, rhs } => {
-                let def_id =
-                    self.elab
-                        .defs
-                        .create_def(params.len() as u32, DefKind::Function, Some(*rhs));
-                self.elab.scopes.insert(this_scope_id, *name, def_id);
-                self.elab.defines.insert(id, def_id);
-            }
+        // If identifier, stamp with the surrounding scope
+        if let Ast::Identifier(..) = ast {
+            self.elab.ast_scopes.insert(id, this_scope_id);
+        }
 
-            Ast::Lambda(_, _) => {
-                let new_scope = self.elab.scopes.new_scope(Some(this_scope_id));
-                self.scope_stack.push(new_scope);
-            }
+        // If binding, add the def to the current scope
+        if let Ast::Binding { name, params, rhs } = ast {
+            let def_id =
+                self.elab
+                    .defs
+                    .create_def(params.len() as u32, DefKind::Function, Some(*rhs));
+            self.elab.scopes.insert(this_scope_id, *name, def_id);
+            self.elab.defines.insert(id, def_id);
+        }
 
-            _ => {}
+        // If this AST defines a new lexical scope, push it to the stack
+        if opens_scope(ast) {
+            let new_scope = self.elab.scopes.new_scope(Some(this_scope_id));
+            self.scope_stack.push(new_scope);
         }
 
         Ok(())
@@ -127,8 +113,9 @@ impl<'a> AstVisitor for Declare<'a> {
     fn leave_ast(&mut self, id: AstId) -> Result<(), Self::Error> {
         let ast = self.asts.get(id).expect("got an invalid AST id");
 
-        if let Ast::Let(_, _) = ast {
-            _ = self.scope_stack.pop()
+        // If this AST defined a new lexical scope, pop it
+        if opens_scope(ast) {
+            self.scope_stack.pop();
         }
 
         Ok(())
@@ -139,9 +126,6 @@ impl<'a> AstVisitor for Declare<'a> {
             .scope_stack
             .last()
             .expect("scope stack shouldn't be empty");
-
-        // stamp every single pattern that comes through here with the current scope
-        self.elab.pattern_scopes.insert(id, this_scope_id);
 
         let pattern = self.patterns.get(id).expect("pattern should exist");
 
@@ -155,29 +139,18 @@ impl<'a> AstVisitor for Declare<'a> {
 
         Ok(())
     }
-
-    fn leave_pattern(&mut self, _id: PatternId) -> Result<(), Self::Error> {
-        Ok(())
-    }
 }
 
 pub struct Resolve<'a> {
     asts: &'a AstHeap,
-    patterns: &'a PatternHeap,
     symbols: &'a SymbolTable,
     elab: &'a mut Elaboration,
 }
 
 impl<'a> Resolve<'a> {
-    pub fn new(
-        asts: &'a AstHeap,
-        patterns: &'a PatternHeap,
-        symbols: &'a SymbolTable,
-        elab: &'a mut Elaboration,
-    ) -> Self {
+    pub fn new(asts: &'a AstHeap, symbols: &'a SymbolTable, elab: &'a mut Elaboration) -> Self {
         Self {
             asts,
-            patterns,
             symbols,
             elab,
         }
@@ -189,13 +162,13 @@ impl<'a> AstVisitor for Resolve<'a> {
 
     fn enter_ast(&mut self, id: AstId) -> Result<(), Self::Error> {
         let ast = self.asts.get(id).expect("got an invalid AST id");
-        let ast_scope_id = *self
-            .elab
-            .ast_scopes
-            .get(&id)
-            .expect("should've been scoped during Declare");
 
         if let Ast::Identifier(sym) = ast {
+            let ast_scope_id = *self
+                .elab
+                .ast_scopes
+                .get(&id)
+                .expect("should've been scoped during Declare");
             let def_id = self
                 .elab
                 .scopes

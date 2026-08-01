@@ -1,6 +1,8 @@
+use std::rc::Rc;
+
 use crate::{
     builtin::Builtin,
-    ir::{FunctionId, HeapAddr, Instr, Program, Slot, Value},
+    ir::{Function, FunctionId, HeapAddr, Instr, Program, Slot, Value},
 };
 
 pub struct Eval {
@@ -11,20 +13,24 @@ pub struct Eval {
 }
 
 struct Frame {
-    func_id: FunctionId,
-    // TODO: captured closure heap addr
+    /// Shared-ptr to the corresponding Function's instructions
+    instrs: Rc<[Instr]>,
+    /// The local slots allocated for this frame
     slots: Vec<Value>,
-    /// The instruction pointer into this frame's function's thingy
+    /// The instruction pointer into this frame's function's instructions
     ip: usize,
     /// Relative to the _CALLER_'s frame
     return_slot: Slot,
 }
 
 impl Frame {
-    fn new(func_id: FunctionId, slot_count: u32, return_slot: Slot) -> Self {
+    fn new(func: &Function, arg: Value, return_slot: Slot) -> Self {
+        let mut slots = vec![Value::Undefined; func.slots_used as usize];
+        slots[0] = arg;
+
         Self {
-            func_id,
-            slots: (0..slot_count).map(|_| Value::Undefined).collect(),
+            instrs: func.instructions.clone(),
+            slots,
             ip: 0,
             return_slot,
         }
@@ -39,7 +45,6 @@ impl Frame {
     }
 }
 
-// TODO: Make this an enum `HeapObj`, then HeapAddr just refers to one of these
 enum HeapObj {
     Map(Vec<(Value, Value)>),
     Closure(FunctionId, Vec<Value>),
@@ -47,13 +52,16 @@ enum HeapObj {
 
 impl HeapObj {
     fn map_lookup(&self, key: Value) -> Result<Value, String> {
-        if let HeapObj::Map(pairs) = self {
-            pairs
-                .iter()
-                .find_map(|(k, v)| (*k == key).then_some(*v))
-                .ok_or_else(|| format!("map didn't contain key {key:?}"))
-        } else {
-            Err(String::from("bad"))
+        self.as_map()?
+            .iter()
+            .find_map(|(k, v)| (*k == key).then_some(*v))
+            .ok_or_else(|| format!("map didn't contain key {key:?}"))
+    }
+
+    fn as_map(&self) -> Result<&[(Value, Value)], String> {
+        match self {
+            HeapObj::Map(pairs) => Ok(pairs),
+            HeapObj::Closure(..) => Err(String::from("expected a map, found a closure")),
         }
     }
 }
@@ -73,52 +81,40 @@ impl Heap {
         retval
     }
 
-    fn deref(&self, slot: HeapAddr) -> &HeapObj {
-        &self.objs[slot.as_usize()]
+    fn deref(&self, addr: HeapAddr) -> &HeapObj {
+        &self.objs[addr.as_usize()]
     }
 }
 
 impl Eval {
     pub fn new(program: Program) -> Self {
         let entry = program.entry;
-        let mut retval = Self {
-            frame_stack: Vec::new(),
+        let function = &program.funcs[entry.as_usize()];
+
+        Self {
+            frame_stack: vec![Frame::new(function, Value::Undefined, Slot::new(0))],
             program,
             heap: Heap::new(),
             result: Value::Undefined,
-        };
-
-        let slot_count = retval.program.funcs[entry.as_usize()].slots_used;
-        let frame = Frame::new(entry, slot_count, Slot::new(0));
-        retval.frame_stack.push(frame);
-
-        retval
+        }
     }
 
     pub fn eval(&mut self) -> Result<Value, String> {
-        while !self.frame_stack.is_empty() {
-            let frame_idx = self.frame_stack.len() - 1;
+        while let Some(frame) = self.frame_stack.last_mut() {
+            let instrs = frame.instrs.clone();
 
-            let (func_id, ip) = {
-                let frame = &self.frame_stack[frame_idx];
-                (frame.func_id, frame.ip)
-            };
+            let ip = frame.ip;
+            frame.ip += 1;
 
-            let instructions = &self.program.funcs[func_id.as_usize()].instructions;
-            let instr = instructions[ip].clone();
-
-            self.frame_stack[frame_idx].ip += 1;
-
-            self.execute_instruction(instr)?;
+            self.execute_instruction(&instrs[ip])?;
         }
 
         Ok(self.result)
     }
 
-    fn execute_instruction(&mut self, instr: Instr) -> Result<(), String> {
-        println!("{instr:?}");
+    fn execute_instruction(&mut self, instr: &Instr) -> Result<(), String> {
         match instr {
-            Instr::Const { dst, value } => self.store(dst, value),
+            Instr::Const { dst, value } => self.store(*dst, *value),
 
             Instr::MakeMap { dst, pairs } => {
                 let map = HeapObj::Map(
@@ -128,45 +124,41 @@ impl Eval {
                         .collect(),
                 );
                 let map_slot = self.heap.alloc(map);
-                self.store(dst, Value::Map(map_slot))
+                self.store(*dst, Value::Map(map_slot))
             }
 
-            Instr::MakeClosure { dst, function } => {
-                let captures = &self.program.funcs[function.as_usize()].captures;
+            Instr::MakeClosure { dst, func_id } => {
+                let captures = &self.program.funcs[func_id.as_usize()].captures;
                 let values = captures.iter().map(|(_, src)| self.load(*src)).collect();
-                let func_addr = self.heap.alloc(HeapObj::Closure(function, values));
-                self.store(dst, Value::Closure(func_addr))
+                let func_addr = self.heap.alloc(HeapObj::Closure(*func_id, values));
+                self.store(*dst, Value::Closure(func_addr))
             }
 
             Instr::Apply { dst, lhs, rhs } => {
-                let lhs = self.load(lhs);
-                let rhs = self.load(rhs);
+                let lhs = self.load(*lhs);
+                let rhs = self.load(*rhs);
 
-                self.apply(dst, lhs, rhs)?;
+                self.apply(*dst, lhs, rhs)?;
             }
 
             Instr::Ret { src } => {
                 let frame = self.frame_stack.pop().unwrap();
-                let retval = frame.load(src);
-                self.store(frame.return_slot, retval);
-            }
-
-            Instr::RetEval { src } => {
-                let frame = self.frame_stack.pop().unwrap();
-                self.result = frame.load(src);
+                let retval = frame.load(*src);
+                match self.frame_stack.last_mut() {
+                    Some(caller) => caller.store(frame.return_slot, retval),
+                    None => self.result = retval,
+                }
             }
         };
         Ok(())
     }
 
     fn load(&self, slot: Slot) -> Value {
-        let frame_idx = self.frame_stack.len() - 1;
-        self.frame_stack[frame_idx].load(slot)
+        self.frame_stack.last().unwrap().load(slot)
     }
 
     fn store(&mut self, slot: Slot, value: Value) {
-        let frame_idx = self.frame_stack.len() - 1;
-        self.frame_stack[frame_idx].store(slot, value);
+        self.frame_stack.last_mut().unwrap().store(slot, value);
     }
 
     fn apply(&mut self, dst: Slot, lhs: Value, rhs: Value) -> Result<(), String> {
@@ -174,27 +166,28 @@ impl Eval {
             Value::Map(addr) => self.store(dst, self.heap.deref(addr).map_lookup(rhs)?),
             Value::Closure(addr) => {
                 let HeapObj::Closure(func_id, values) = self.heap.deref(addr) else {
-                    todo!()
+                    unreachable!("closure value pointed at {:?}", addr)
                 };
 
                 let func = &self.program.funcs[func_id.as_usize()];
-                let mut frame = Frame::new(*func_id, func.slots_used, dst);
-                frame.slots[0] = rhs; // Store arg
+                let mut frame = Frame::new(func, rhs, dst);
 
-                for (i, (dst, _)) in self.program.funcs[func_id.as_usize()]
-                    .captures
-                    .iter()
-                    .enumerate()
-                {
-                    frame.store(*dst, values[i]);
+                for (i, (capture_dst, _)) in func.captures.iter().enumerate() {
+                    frame.store(*capture_dst, values[i]);
                 }
 
                 self.frame_stack.push(frame);
             }
-            Value::Builtin(Builtin::Add) => self.store(dst, self.add(rhs)?),
-            _ => panic!("can't apply to a {lhs:?}"),
+            Value::Builtin(builtin) => self.store(dst, self.call_builtin(builtin, rhs)?),
+            _ => return Err(format!("can't apply to a {lhs:?}")),
         }
         Ok(())
+    }
+
+    fn call_builtin(&self, builtin: Builtin, args: Value) -> Result<Value, String> {
+        match builtin {
+            Builtin::Add => self.add(args),
+        }
     }
 
     fn add(&self, args: Value) -> Result<Value, String> {
@@ -209,7 +202,7 @@ impl Eval {
 
     fn get_pair(&self, value: Value) -> Result<(Value, Value), String> {
         let Value::Map(addr) = value else {
-            return Err(String::from("not a tuple"));
+            return Err(format!("expected a tuple, got {value:?}"));
         };
 
         let map_obj = self.heap.deref(addr);

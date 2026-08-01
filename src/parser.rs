@@ -184,18 +184,18 @@ impl<'a> Parser<'a> {
     fn let_in_expr(&mut self) -> Result<AstId, String> {
         match self.peek().kind {
             TokenKind::Let => {
-                let _ = self.pop();
+                self.pop();
                 let bindings: Vec<AstId>;
                 if self.peek().kind == TokenKind::Indent {
-                    let _ = self.expect(TokenKind::Indent)?;
+                    self.expect(TokenKind::Indent)?;
                     bindings = self.parse_bindings(TokenKind::Dedent)?;
                     self.accept_newlines();
-                    let _ = self.expect(TokenKind::Dedent)?;
+                    self.expect(TokenKind::Dedent)?;
                     self.accept_newlines();
                 } else {
                     bindings = self.parse_bindings(TokenKind::In)?;
                 }
-                let _ = self.expect(TokenKind::In)?;
+                self.expect(TokenKind::In)?;
                 let expr = self.lambda_expr()?;
                 Ok(self.asts.create_let(bindings, expr))
             }
@@ -206,9 +206,9 @@ impl<'a> Parser<'a> {
     fn lambda_expr(&mut self) -> Result<AstId, String> {
         match self.peek().kind {
             TokenKind::Backslash => {
-                let _ = self.pop();
+                self.pop();
                 let pattern = self.parse_pattern()?;
-                let _ = self.expect(TokenKind::Arrow)?;
+                self.expect(TokenKind::Arrow)?;
                 let expr = self.lambda_expr()?;
                 Ok(self.asts.create_lambda(pattern, expr))
             }
@@ -319,27 +319,27 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_if_expr(&mut self) -> Result<AstId, String> {
-        let _ = self.expect(TokenKind::If)?;
+        self.expect(TokenKind::If)?;
         let mut conds = vec![];
         let condition = self.let_in_expr()?;
         self.accept_newlines();
-        let _ = self.expect(TokenKind::Then);
+        self.expect(TokenKind::Then)?;
         let then = self.let_in_expr()?;
         conds.push((condition, then));
         while self.accept(TokenKind::Elif).is_some() {
             let condition = self.let_in_expr()?;
-            let _ = self.expect(TokenKind::Then);
+            self.expect(TokenKind::Then)?;
             let then = self.let_in_expr()?;
             conds.push((condition, then));
         }
         self.accept_newlines();
-        let _ = self.expect(TokenKind::Else);
+        self.expect(TokenKind::Else)?;
         let else_ = self.let_in_expr()?;
         Ok(self.asts.create_if(conds, else_))
     }
 
     fn parse_map(&mut self) -> Result<AstId, String> {
-        let _ = self.expect(TokenKind::LeftBrace)?;
+        self.expect(TokenKind::LeftBrace)?;
         let mut children: Vec<(AstId, AstId)> = Vec::new();
 
         let truthy_atom_id = self.atoms.intern(".t");
@@ -360,12 +360,12 @@ impl<'a> Parser<'a> {
                 break;
             }
         }
-        let _ = self.expect(TokenKind::RightBrace)?;
+        self.expect(TokenKind::RightBrace)?;
         Ok(self.asts.create_map(children))
     }
 
     fn parse_list(&mut self) -> Result<AstId, String> {
-        let _ = self.expect(TokenKind::LeftSquare)?;
+        self.expect(TokenKind::LeftSquare)?;
 
         let mut children = Vec::new();
 
@@ -377,22 +377,22 @@ impl<'a> Parser<'a> {
                 break;
             }
         }
-        let _ = self.expect(TokenKind::RightBrace)?;
+        self.expect(TokenKind::RightBrace)?;
         Ok(self.asts.make_list(children))
     }
 
     fn parse_parens(&mut self) -> Result<AstId, String> {
-        let _ = self.expect(TokenKind::LeftParen)?;
+        self.expect(TokenKind::LeftParen)?;
         let retval = self.tuple_expr()?;
-        let _ = self.expect(TokenKind::RightParen)?;
+        self.expect(TokenKind::RightParen)?;
         Ok(retval)
     }
 
     fn parse_indent(&mut self) -> Result<AstId, String> {
-        let _ = self.expect(TokenKind::Indent)?;
+        self.expect(TokenKind::Indent)?;
         let retval = self.lambda_expr()?;
         self.accept_newlines();
-        let _ = self.expect(TokenKind::Dedent)?;
+        self.expect(TokenKind::Dedent)?;
         Ok(retval)
     }
 }

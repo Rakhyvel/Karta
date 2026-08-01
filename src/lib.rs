@@ -74,7 +74,6 @@ use ast::AstHeap;
 use parser::Parser;
 
 use crate::{
-    debug::TreePrint,
     elaborate::{Declare, Elaboration, Resolve},
     eval::Eval,
     interner::{AtomTable, StringLiteralTable, SymbolTable},
@@ -175,14 +174,6 @@ impl KartaContext {
         );
         let expr_ast = parser.parse_expr()?;
 
-        println!("The parsed AST:");
-        AstWalker::walk(
-            &ast_heap,
-            &pattern_heap,
-            expr_ast,
-            TreePrint::new(&ast_heap, &pattern_heap),
-        )?;
-
         AstWalker::walk(
             &ast_heap,
             &pattern_heap,
@@ -194,14 +185,10 @@ impl KartaContext {
             &ast_heap,
             &pattern_heap,
             expr_ast,
-            Resolve::new(&ast_heap, &pattern_heap, &symbol_table, &mut elab),
+            Resolve::new(&ast_heap, &symbol_table, &mut elab),
         )?;
 
-        println!("\n");
-        elab.debug();
-
         let program = Lowerer::new(&ast_heap, &elab).lower(expr_ast);
-        println!("\n");
 
         Eval::new(program).eval()
     }
