@@ -5,6 +5,7 @@ use crate::{
     builtin::Builtin,
     elaborate::Elaboration,
     interner::AtomId,
+    ir::Instr::RetEval,
     scope::DefId,
 };
 
@@ -50,6 +51,9 @@ pub enum Instr {
     MakeClosure { dst: Slot, function: FunctionId },
 
     Apply { dst: Slot, lhs: Slot, rhs: Slot },
+
+    Ret,
+    RetEval,
 }
 
 #[derive(Debug, Clone, PartialEq, Copy)]
@@ -61,6 +65,7 @@ pub enum Value {
     Atom(AtomId),
     Builtin(Builtin),
     Map(HeapAddr),
+    Closure(HeapAddr),
 }
 
 impl Value {
@@ -94,6 +99,10 @@ impl Value {
 pub struct Slot(u32);
 
 impl Slot {
+    pub fn new(x: u32) -> Slot {
+        Slot(x)
+    }
+
     pub fn as_usize(self) -> usize {
         self.0 as usize
     }
@@ -106,7 +115,7 @@ pub enum HeapObjKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct HeapAddr(HeapObjKind, u32);
+pub struct HeapAddr(pub HeapObjKind, pub u32);
 
 impl HeapAddr {
     pub fn new(kind: HeapObjKind, id: u32) -> Self {
@@ -142,6 +151,8 @@ impl<'a> Lowerer<'a> {
         let mut f = FunctionLowerer::new(self.asts, self.elab, &self.funcs);
 
         let result = f.lower_ast(root);
+
+        f.emit(RetEval);
 
         let root_function = Function {
             instructions: f.instructions,
@@ -272,6 +283,7 @@ impl<'a> FunctionLowerer<'a> {
                     f.params.push(param_slot);
 
                     let result = f.lower_ast(*body);
+                    f.emit(Instr::Ret);
 
                     Function {
                         slots_used: f.slots_used,
