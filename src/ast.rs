@@ -4,104 +4,121 @@ use crate::{
     builtin::Builtin,
     interner::{AtomId, StringLiteralId, SymbolId},
     pattern::PatternId,
+    span::Span,
 };
 
 /// Contains the ASTs used in a Karta context
 pub(crate) struct AstHeap {
     asts: Vec<Ast>,
+    spans: Vec<Span>,
 }
 
 impl AstHeap {
     /// Create a new Ast Heap
     pub(crate) fn new() -> Self {
-        Self { asts: vec![] }
+        Self {
+            asts: vec![],
+            spans: vec![],
+        }
     }
 
     /// Inserts a new Ast into the heap, and returns its ID
-    fn insert(&mut self, ast: Ast) -> AstId {
+    fn insert(&mut self, ast: Ast, span: Span) -> AstId {
         let retval = AstId::new(self.asts.len() as u32);
         self.asts.push(ast);
+        self.spans.push(span);
+        assert_eq!(self.asts.len(), self.spans.len());
         retval
     }
 
     /// Inserts an integer Ast, and returns its ID
-    pub(crate) fn create_int(&mut self, value: i64) -> AstId {
-        self.insert(Ast::Int(value))
+    pub(crate) fn create_int(&mut self, span: Span, value: i64) -> AstId {
+        self.insert(Ast::Int(value), span)
     }
 
     /// Inserts a float Ast, and returns its ID
-    pub(crate) fn create_float(&mut self, value: f64) -> AstId {
-        self.insert(Ast::Float(value))
+    pub(crate) fn create_float(&mut self, span: Span, value: f64) -> AstId {
+        self.insert(Ast::Float(value), span)
     }
 
     /// Inserts a char Ast, and returns its ID
-    pub(crate) fn create_char(&mut self, value: char) -> AstId {
-        self.insert(Ast::Char(value))
+    pub(crate) fn create_char(&mut self, span: Span, value: char) -> AstId {
+        self.insert(Ast::Char(value), span)
     }
 
     /// Inserts a string Ast, and returns its ID
-    pub(crate) fn create_string(&mut self, value: StringLiteralId) -> AstId {
-        self.insert(Ast::String(value))
+    pub(crate) fn create_string(&mut self, span: Span, value: StringLiteralId) -> AstId {
+        self.insert(Ast::String(value), span)
     }
 
     /// Inserts an atom Ast, and returns its ID
-    pub(crate) fn create_atom(&mut self, value: AtomId) -> AstId {
-        self.insert(Ast::Atom(value))
+    pub(crate) fn create_atom(&mut self, span: Span, value: AtomId) -> AstId {
+        self.insert(Ast::Atom(value), span)
     }
 
     pub(crate) fn create_binding(
         &mut self,
+        span: Span,
         name: SymbolId,
         params: Vec<PatternId>,
         rhs: AstId,
     ) -> AstId {
-        self.insert(Ast::Binding { name, params, rhs })
+        self.insert(Ast::Binding { name, params, rhs }, span)
     }
 
     /// Inserts a map Ast, and returns its ID
-    pub(crate) fn create_map(&mut self, fields: Vec<(AstId, AstId)>) -> AstId {
-        self.insert(Ast::Map(fields))
+    pub(crate) fn create_map(&mut self, span: Span, fields: Vec<(AstId, AstId)>) -> AstId {
+        self.insert(Ast::Map(fields), span)
     }
 
-    pub(crate) fn make_list(&mut self, terms: Vec<AstId>) -> AstId {
-        self.insert(Ast::List(terms))
+    pub(crate) fn make_list(&mut self, span: Span, terms: Vec<AstId>) -> AstId {
+        self.insert(Ast::List(terms), span)
     }
 
-    pub(crate) fn make_tuple(&mut self, terms: Vec<AstId>) -> AstId {
-        self.insert(Ast::Tuple(terms))
+    pub(crate) fn make_tuple(&mut self, span: Span, terms: Vec<AstId>) -> AstId {
+        self.insert(Ast::Tuple(terms), span)
     }
 
-    pub(crate) fn create_file(&mut self) -> AstId {
-        self.insert(Ast::File())
+    pub(crate) fn create_file(&mut self, span: Span) -> AstId {
+        self.insert(Ast::File(), span)
     }
 
-    pub(crate) fn create_let(&mut self, fields: Vec<AstId>, in_expr: AstId) -> AstId {
-        self.insert(Ast::Let(fields, in_expr))
+    pub(crate) fn create_let(&mut self, span: Span, fields: Vec<AstId>, in_expr: AstId) -> AstId {
+        self.insert(Ast::Let(fields, in_expr), span)
     }
 
-    pub(crate) fn create_identifier(&mut self, identifier: SymbolId) -> AstId {
-        self.insert(Ast::Identifier(identifier))
+    pub(crate) fn create_identifier(&mut self, span: Span, identifier: SymbolId) -> AstId {
+        self.insert(Ast::Identifier(identifier), span)
     }
 
-    pub(crate) fn create_builtin_function(&mut self, id: Builtin) -> AstId {
-        self.insert(Ast::BuiltinFunction(id))
+    pub(crate) fn create_builtin_function(&mut self, span: Span, id: Builtin) -> AstId {
+        self.insert(Ast::BuiltinFunction(id), span)
     }
 
-    pub(crate) fn create_apply(&mut self, lhs: AstId, rhs: AstId) -> AstId {
-        self.insert(Ast::Apply(lhs, rhs))
+    pub(crate) fn create_apply(&mut self, span: Span, lhs: AstId, rhs: AstId) -> AstId {
+        self.insert(Ast::Apply(lhs, rhs), span)
     }
 
-    pub(crate) fn create_lambda(&mut self, arg: PatternId, body: AstId) -> AstId {
-        self.insert(Ast::Lambda { arg, body })
+    pub(crate) fn create_lambda(&mut self, span: Span, arg: PatternId, body: AstId) -> AstId {
+        self.insert(Ast::Lambda { arg, body }, span)
     }
 
-    pub(crate) fn create_if(&mut self, conds: Vec<(AstId, AstId)>, else_: AstId) -> AstId {
-        self.insert(Ast::If(conds, else_))
+    pub(crate) fn create_if(
+        &mut self,
+        span: Span,
+        conds: Vec<(AstId, AstId)>,
+        else_: AstId,
+    ) -> AstId {
+        self.insert(Ast::If(conds, else_), span)
     }
 
     /// Retrieves a reference to an Ast for a given ID, if it exists
     pub(crate) fn get(&self, ast_id: AstId) -> Option<&Ast> {
         self.asts.get(ast_id.as_u32() as usize)
+    }
+
+    pub(crate) fn span(&self, ast_id: AstId) -> Span {
+        self.spans[ast_id.as_u32() as usize]
     }
 }
 

@@ -53,6 +53,7 @@ pub mod ast;
 mod builtin;
 mod debug;
 mod elaborate;
+mod error;
 mod eval;
 mod interner;
 mod ir;
@@ -231,6 +232,18 @@ mod tests {
     }
 
     #[test]
+    fn empty_map() -> Result<(), String> {
+        let karta_context = KartaContext::new()?;
+
+        let res: f64 = karta_context
+            .eval("if {} then 100.0 else 300.0")?
+            .as_float()?;
+
+        assert_eq!(res, 300.0);
+        Ok(())
+    }
+
+    #[test]
     fn get_map_int() -> Result<(), String> {
         let karta_context = KartaContext::new()?;
 
@@ -255,12 +268,42 @@ mod tests {
     }
 
     #[test]
+    fn map_trailing_comma() -> Result<(), String> {
+        let karta_context = KartaContext::new()?;
+
+        let res: f64 = karta_context
+            .eval("let test = {.test-atom = 4.5, .test-atom-2 = 5.4,} in test.test-atom-2")?
+            .as_float()?;
+
+        assert_eq!(res, 5.4);
+        Ok(())
+    }
+
+    #[test]
     fn integer_map_keys() -> Result<(), String> {
         let kctx = KartaContext::new()?;
 
         let res: i64 = kctx.eval("{0 = 23} 0")?.as_int()?;
 
         assert_eq!(res, 23);
+        Ok(())
+    }
+
+    #[test]
+    fn map_multiple_lines() -> Result<(), String> {
+        let karta_context = KartaContext::new()?;
+
+        let res: i64 = karta_context
+            .eval(
+                r#"let
+  p = { .a = 1
+      , .b = 2}
+in p .b
+"#,
+            )?
+            .as_int()?;
+
+        assert_eq!(res, 2);
         Ok(())
     }
 
@@ -284,6 +327,64 @@ mod tests {
   x = 4
   y = 5
 in (@add (x, y))
+"#,
+            )?
+            .as_int()?;
+
+        assert_eq!(res, 9);
+        Ok(())
+    }
+
+    #[test]
+    fn let_in_multiple_newlines() -> Result<(), String> {
+        let karta_context = KartaContext::new()?;
+
+        let res: i64 = karta_context
+            .eval(
+                r#"let
+  x = 4
+  y = 5
+
+
+in (@add (x, y))
+"#,
+            )?
+            .as_int()?;
+
+        assert_eq!(res, 9);
+        Ok(())
+    }
+
+    #[test]
+    fn let_in_preceding_comment() -> Result<(), String> {
+        let karta_context = KartaContext::new()?;
+
+        let res: i64 = karta_context
+            .eval(
+                r#"let
+  ; this is a preceding comment
+  x = 4
+  y = 5
+in (@add (x, y))
+"#,
+            )?
+            .as_int()?;
+
+        assert_eq!(res, 9);
+        Ok(())
+    }
+
+    #[test]
+    fn let_in_own_line() -> Result<(), String> {
+        let karta_context = KartaContext::new()?;
+
+        let res: i64 = karta_context
+            .eval(
+                r#"let
+  x = 4
+  y = 5
+in 
+    (@add (x, y))
 "#,
             )?
             .as_int()?;

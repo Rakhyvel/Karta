@@ -5,6 +5,7 @@ use crate::{
     layout,
     pattern::{PatternHeap, PatternId},
     source::SourceFile,
+    span::Span,
     tokenizer::{Token, TokenKind, Tokenizer},
 };
 
@@ -44,27 +45,27 @@ impl<'a> Parser<'a> {
 
     /// Parses file contents into an AST
     pub(crate) fn parse_file(&mut self) -> Result<AstId, String> {
-        self.get_tokens();
+        self.tokens = self.get_tokens();
 
         self.accept_newlines();
 
         self.parse_bindings(TokenKind::EndOfFile)?;
 
-        Ok(self.asts.create_file())
+        Ok(self.asts.create_file(self.tokens[0].span))
     }
 
     pub(crate) fn parse_expr(&mut self) -> Result<AstId, String> {
-        self.get_tokens();
+        self.tokens = self.get_tokens();
 
         self.let_in_expr()
     }
 
     /// Creates a tokenizer, uses it to tokenize `file_contents` into the parser's token vec, then applies
     /// `layout` to the token stream.
-    fn get_tokens(&mut self) {
+    fn get_tokens(&mut self) -> Vec<Token> {
         let mut tokenizer = Tokenizer::new(self.source);
         tokenizer.tokenize(&mut self.tokens).unwrap();
-        layout::layout(&mut self.tokens);
+        layout::layout(&self.tokens)
     }
 
     /// Returns the token at the begining of the stream without removing it
@@ -137,34 +138,35 @@ impl<'a> Parser<'a> {
             let name = self.symbols.intern(name_text);
 
             // Parse patterns into a list of args before the `=`
-            let params: Vec<PatternId> = self.parse_pattern_list();
+            let params: Vec<PatternId> = self.parse_pattern_list()?;
 
             // Parse the RHS after the `=`
             let rhs_value = self.let_in_expr()?;
             self.accept_newlines();
 
             // Slap that bad boy in
-            retval.push(self.asts.create_binding(name, params, rhs_value));
+            retval.push(self.asts.create_binding(name_span, name, params, rhs_value));
         }
         Ok(retval)
     }
 
     /// Parses binding params in between the binding name and its `=` sign
-    fn parse_pattern_list(&mut self) -> Vec<PatternId> {
+    fn parse_pattern_list(&mut self) -> Result<Vec<PatternId>, String> {
+        let mut params = Vec::new();
         // Keep trying to parse exprs until you hit an `=` sign
-        std::iter::from_fn(|| {
-            if self.accept(TokenKind::Assign).is_none() {
-                Some(self.parse_pattern().ok()?)
-            } else {
-                None
-            }
-        })
-        .collect()
+        while self.accept(TokenKind::Assign).is_none() {
+            params.push(self.parse_pattern()?);
+        }
+        Ok(params)
     }
 
     fn tuple_expr(&mut self) -> Result<AstId, String> {
         let expr = self.let_in_expr()?;
-        if self.peek().kind == TokenKind::Comma {
+        if let Token {
+            kind: TokenKind::Comma,
+            span,
+        } = self.peek()
+        {
             let mut terms = vec![];
             terms.push(expr);
 
@@ -172,19 +174,23 @@ impl<'a> Parser<'a> {
                 terms.push(self.let_in_expr()?);
             }
 
-            Ok(self.asts.make_tuple(terms))
+            Ok(self.asts.make_tuple(span, terms))
         } else {
             Ok(expr)
         }
     }
 
     fn let_in_expr(&mut self) -> Result<AstId, String> {
-        match self.peek().kind {
-            TokenKind::Let => {
+        match self.peek() {
+            Token {
+                kind: TokenKind::Let,
+                span,
+            } => {
                 self.pop();
                 let bindings: Vec<AstId>;
                 if self.peek().kind == TokenKind::Indent {
                     self.expect(TokenKind::Indent)?;
+                    self.accept_newlines();
                     bindings = self.parse_bindings(TokenKind::Dedent)?;
                     self.accept_newlines();
                     self.expect(TokenKind::Dedent)?;
@@ -193,21 +199,24 @@ impl<'a> Parser<'a> {
                     bindings = self.parse_bindings(TokenKind::In)?;
                 }
                 self.expect(TokenKind::In)?;
-                let expr = self.lambda_expr()?;
-                Ok(self.asts.create_let(bindings, expr))
+                let expr = self.let_in_expr()?;
+                Ok(self.asts.create_let(span, bindings, expr))
             }
             _ => self.lambda_expr(),
         }
     }
 
     fn lambda_expr(&mut self) -> Result<AstId, String> {
-        match self.peek().kind {
-            TokenKind::Backslash => {
+        match self.peek() {
+            Token {
+                kind: TokenKind::Backslash,
+                span,
+            } => {
                 self.pop();
                 let pattern = self.parse_pattern()?;
                 self.expect(TokenKind::Arrow)?;
                 let expr = self.lambda_expr()?;
-                Ok(self.asts.create_lambda(pattern, expr))
+                Ok(self.asts.create_lambda(span, pattern, expr))
             }
             _ => self.apply_expr(),
         }
@@ -217,7 +226,9 @@ impl<'a> Parser<'a> {
         let mut expr = self.expr()?;
         while self.next_is_expr() {
             let rhs = self.expr()?;
-            expr = self.asts.create_apply(expr, rhs);
+
+            let span = self.asts.span(expr);
+            expr = self.asts.create_apply(span, expr, rhs);
         }
         Ok(expr)
     }
@@ -260,7 +271,7 @@ impl<'a> Parser<'a> {
             .span_text(token.span)
             .parse::<i64>()
             .map_err(|e| e.to_string())?;
-        Ok(self.asts.create_int(value))
+        Ok(self.asts.create_int(token.span, value))
     }
 
     fn parse_float(&mut self) -> Result<AstId, String> {
@@ -270,53 +281,54 @@ impl<'a> Parser<'a> {
             .span_text(token.span)
             .parse::<f64>()
             .map_err(|e| e.to_string())?;
-        Ok(self.asts.create_float(value))
+        Ok(self.asts.create_float(token.span, value))
     }
 
     fn parse_char(&mut self) -> Result<AstId, String> {
         let token = self.expect(TokenKind::Char)?;
-        Ok(self
-            .asts
-            .create_char(self.source.span_text(token.span).chars().nth(1).unwrap()))
+        Ok(self.asts.create_char(
+            token.span,
+            self.source.span_text(token.span).chars().nth(1).unwrap(),
+        ))
     }
 
     fn parse_string(&mut self) -> Result<AstId, String> {
         let token_span = self.expect(TokenKind::String)?.span;
         let token_text = self.source.span_text(token_span);
         let string_literal_id = self.strings.intern(token_text);
-        Ok(self.asts.create_string(string_literal_id))
+        Ok(self.asts.create_string(token_span, string_literal_id))
     }
 
     fn parse_atom(&mut self) -> Result<AstId, String> {
         let token_span = self.expect(TokenKind::Atom)?.span;
         let token_text = self.source.span_text(token_span);
         let atom_id = self.atoms.intern(token_text);
-        Ok(self.asts.create_atom(atom_id))
+        Ok(self.asts.create_atom(token_span, atom_id))
     }
 
     fn parse_builtin(&mut self) -> Result<AstId, String> {
         let name_span = self.expect(TokenKind::Builtin)?.span;
         let name_text = self.source.span_text(name_span);
         let builtin = Builtin::parse(name_text).ok_or(format!("unknown builtin `{name_text}`"))?;
-        Ok(self.asts.create_builtin_function(builtin))
+        Ok(self.asts.create_builtin_function(name_span, builtin))
     }
 
     fn parse_identifier(&mut self) -> Result<AstId, String> {
         let name_span = self.expect(TokenKind::Identifier)?.span;
         let name_text = self.source.span_text(name_span);
         let name = self.symbols.intern(name_text);
-        Ok(self.asts.create_identifier(name))
+        Ok(self.asts.create_identifier(name_span, name))
     }
 
     fn parse_pattern_identifier(&mut self) -> Result<PatternId, String> {
         let name_span = self.expect(TokenKind::Identifier)?.span;
         let name_text = self.source.span_text(name_span);
         let name = self.symbols.intern(name_text);
-        Ok(self.patterns.create_identifier(name))
+        Ok(self.patterns.create_identifier(name_span, name))
     }
 
     fn parse_if_expr(&mut self) -> Result<AstId, String> {
-        self.expect(TokenKind::If)?;
+        let token = self.expect(TokenKind::If)?;
         let mut conds = vec![];
         let condition = self.let_in_expr()?;
         self.accept_newlines();
@@ -332,37 +344,47 @@ impl<'a> Parser<'a> {
         self.accept_newlines();
         self.expect(TokenKind::Else)?;
         let else_ = self.let_in_expr()?;
-        Ok(self.asts.create_if(conds, else_))
+        Ok(self.asts.create_if(token.span, conds, else_))
     }
 
     fn parse_map(&mut self) -> Result<AstId, String> {
-        self.expect(TokenKind::LeftBrace)?;
+        let token = self.expect(TokenKind::LeftBrace)?;
         let mut children: Vec<(AstId, AstId)> = Vec::new();
 
-        let truthy_atom_id = self.atoms.intern(".t");
-        let truthy_atom = self.asts.create_atom(truthy_atom_id);
+        let truthy_atom = self
+            .asts
+            .create_atom(Span { start: 0, end: 0 }, AtomTable::TRUE);
 
-        loop {
-            let key = self.let_in_expr()?;
-            if let Some(_token) = self.accept(TokenKind::Assign) {
-                // Map field, parse and insert value
-                let value = self.let_in_expr()?;
-                children.push((key, value));
-            } else {
-                // Set field, insert `.t` as the value
-                children.push((key, truthy_atom));
-            }
+        if self.accept(TokenKind::RightBrace).is_none() {
+            children.push(self.parse_map_elem(truthy_atom)?);
 
-            if self.accept(TokenKind::Comma).is_none() {
-                break;
+            while self.accept(TokenKind::Comma).is_some() {
+                if let TokenKind::RightBrace = self.peek().kind {
+                    // Comma accepted above was a trailing comma, break
+                    break;
+                }
+                children.push(self.parse_map_elem(truthy_atom)?);
             }
+            self.expect(TokenKind::RightBrace)?;
         }
-        self.expect(TokenKind::RightBrace)?;
-        Ok(self.asts.create_map(children))
+        Ok(self.asts.create_map(token.span, children))
+    }
+
+    fn parse_map_elem(&mut self, truthy_atom: AstId) -> Result<(AstId, AstId), String> {
+        let key = self.let_in_expr()?;
+
+        if let Some(_token) = self.accept(TokenKind::Assign) {
+            // Map field, parse and insert value
+            let value = self.let_in_expr()?;
+            Ok((key, value))
+        } else {
+            // Set field, insert `.t` as the value
+            Ok((key, truthy_atom))
+        }
     }
 
     fn parse_list(&mut self) -> Result<AstId, String> {
-        self.expect(TokenKind::LeftSquare)?;
+        let token = self.expect(TokenKind::LeftSquare)?;
 
         let mut children = Vec::new();
 
@@ -375,7 +397,7 @@ impl<'a> Parser<'a> {
             }
         }
         self.expect(TokenKind::RightBrace)?;
-        Ok(self.asts.make_list(children))
+        Ok(self.asts.make_list(token.span, children))
     }
 
     fn parse_parens(&mut self) -> Result<AstId, String> {

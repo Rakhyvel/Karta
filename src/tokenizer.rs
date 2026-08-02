@@ -25,14 +25,7 @@ impl<'a> Tokenizer<'a> {
 
     /// Convert the file contents string into a stream of tokens
     pub(crate) fn tokenize(&mut self, tokens: &mut Vec<Token>) -> Result<(), String> {
-        while !self.eof() {
-            let char = self
-                .source_file
-                .text()
-                .chars()
-                .nth(self.cursor as usize)
-                .unwrap(); // yeah probably slow, but it doesn't matter
-
+        while let Some(char) = self.current_char() {
             match self.state {
                 TokenizerState::None => self.handle_none(char),
                 TokenizerState::Whitespace => self.handle_whitespace(char, tokens),
@@ -83,11 +76,11 @@ impl<'a> Tokenizer<'a> {
                 start: self.starting_cursor,
                 end: self.cursor,
             });
-            if token_data.rfind('\n').is_some() {
+            if let Some(offset) = token_data.rfind('\n') {
                 let token = Token {
                     kind: TokenKind::Newline,
                     span: Span {
-                        start: self.starting_cursor,
+                        start: self.starting_cursor + offset as u32,
                         end: self.cursor,
                     },
                 };
@@ -197,13 +190,10 @@ impl<'a> Tokenizer<'a> {
     }
 
     fn first_char_is_singular(&self) -> bool {
-        self.char_is_singular(
-            self.source_file
-                .text()
-                .chars()
-                .nth(self.starting_cursor as usize)
-                .unwrap(),
-        )
+        self.source_file.text()[self.starting_cursor as usize..]
+            .chars()
+            .next()
+            .is_some_and(|c| self.char_is_singular(c))
     }
 
     fn char_is_singular(&self, c: char) -> bool {
@@ -216,18 +206,22 @@ impl<'a> Tokenizer<'a> {
         false
     }
 
+    fn current_char(&self) -> Option<char> {
+        self.source_file.text()[self.cursor as usize..]
+            .chars()
+            .next()
+    }
+
     /// Whether or not the tokenizer is at the end of the file
     fn eof(&self) -> bool {
-        self.source_file
-            .text()
-            .chars()
-            .nth(self.cursor as usize)
-            .is_none()
+        self.current_char().is_none()
     }
 
     /// Advances the cursor and column number, and changes the state to a new state
     fn advance(&mut self, new_state: TokenizerState) {
-        self.cursor += 1;
+        if let Some(c) = self.current_char() {
+            self.cursor += c.len_utf8() as u32;
+        }
         self.state = new_state;
     }
 
@@ -330,9 +324,11 @@ impl TokenKind {
             "then" => TokenKind::Then,
             "elif" => TokenKind::Elif,
             "else" => TokenKind::Else,
-            _ if str.chars().nth(0).unwrap() == '.' => TokenKind::Atom,
-            _ if str.chars().nth(0).unwrap().is_ascii_digit() => TokenKind::Integer,
-            _ => TokenKind::Identifier,
+            _ => match str.chars().next() {
+                Some('.') => TokenKind::Atom,
+                Some(c) if c.is_ascii_digit() => TokenKind::Integer,
+                _ => TokenKind::Identifier,
+            },
         }
     }
 }

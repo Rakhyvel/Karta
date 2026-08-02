@@ -1,30 +1,40 @@
-use crate::interner::SymbolId;
+use crate::{interner::SymbolId, span::Span};
 
 /// Contains the ASTs used in a Karta context
 pub(crate) struct PatternHeap {
     patterns: Vec<Pattern>,
+    spans: Vec<Span>,
 }
 
 impl PatternHeap {
     /// Create a new Pattern Heap
     pub(crate) fn new() -> Self {
-        Self { patterns: vec![] }
+        Self {
+            patterns: vec![],
+            spans: vec![],
+        }
     }
 
     /// Inserts a new Pattern into the heap, and returns its ID
-    fn insert(&mut self, ast: Pattern) -> PatternId {
+    fn insert(&mut self, ast: Pattern, span: Span) -> PatternId {
         let retval = PatternId::new(self.patterns.len() as u32);
         self.patterns.push(ast);
+        self.spans.push(span);
+        assert_eq!(self.patterns.len(), self.spans.len());
         retval
     }
 
-    pub(crate) fn create_identifier(&mut self, identifier: SymbolId) -> PatternId {
-        self.insert(Pattern::Identifier(identifier))
+    pub(crate) fn create_identifier(&mut self, span: Span, identifier: SymbolId) -> PatternId {
+        self.insert(Pattern::Identifier(identifier), span)
     }
 
     /// Retrieves a reference to an Ast for a given ID, if it exists
     pub(crate) fn get(&self, id: PatternId) -> Option<&Pattern> {
         self.patterns.get(id.as_u32() as usize)
+    }
+
+    pub(crate) fn span(&self, id: PatternId) -> Span {
+        self.spans[id.as_u32() as usize]
     }
 }
 
