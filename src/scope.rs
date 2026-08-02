@@ -102,6 +102,10 @@ impl DefArena {
         self.defs.push(Definition::new(arity, kind, rhs));
         retval
     }
+
+    pub(crate) fn get(&self, def: DefId) -> &Definition {
+        &self.defs[def.0 as usize]
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -131,5 +135,9 @@ pub enum DefKind {
 impl Definition {
     pub fn new(arity: u32, kind: DefKind, rhs: Option<AstId>) -> Self {
         Self { arity, kind, rhs }
+    }
+
+    pub fn arity(&self) -> u32 {
+        self.arity
     }
 }

@@ -72,7 +72,7 @@ impl<'a> Declare<'a> {
 }
 
 fn opens_scope(ast: &Ast) -> bool {
-    matches!(ast, Ast::Let(..) | Ast::Lambda { .. })
+    matches!(ast, Ast::Let(..) | Ast::Lambda { .. } | Ast::Binding { .. })
 }
 
 impl<'a> AstVisitor for Declare<'a> {
@@ -102,6 +102,7 @@ impl<'a> AstVisitor for Declare<'a> {
         }
 
         // If this AST defines a new lexical scope, push it to the stack
+        // Do this after Binding so that params dont leak
         if opens_scope(ast) {
             let new_scope = self.elab.scopes.new_scope(Some(this_scope_id));
             self.scope_stack.push(new_scope);

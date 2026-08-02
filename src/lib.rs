@@ -219,6 +219,18 @@ mod tests {
     }
 
     #[test]
+    fn let_in_let_in() -> Result<(), String> {
+        let karta_context = KartaContext::new()?;
+
+        let res: f64 = karta_context
+            .eval("let x = 100.0 in let y = 200.0 in @add(x, y)")?
+            .as_float()?;
+
+        assert_eq!(res, 300.0);
+        Ok(())
+    }
+
+    #[test]
     fn get_map_int() -> Result<(), String> {
         let karta_context = KartaContext::new()?;
 

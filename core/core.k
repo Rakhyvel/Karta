@@ -46,23 +46,6 @@ not x = @not(x)
 length [] = 0
 length [x..xs] = + (length xs) 1
 
-fib 0 = 0
-; fib does not exist. create a lambda that takes in the arity number of arguments, and has an `if-elif-else` chain:
-;   \arg0 -> if (== arg0 0) then 0 else (panic! "function `fib` is not total!")
-fib 1 = 1
-; fib does exist. Modify the lambda expression's if statement:
-;   \arg0 -> ... elif (== arg0 1) then 1 ...
-fib n = ...
-; fib does exist. Modify the lambda expression's if statement:
-;   \arg0 -> .. elif (.t) then ...
-
-; arity MUST match!
-; fib 0 4 = 5 ;=> ERROR!
-
-; constants (defs with arity 0) don't need lambdas
-my-constant = 5
-; my-constant does not exist. arity is 0. just create a def for it
-
 ;; contains
 ;; next
 ;; reverse 

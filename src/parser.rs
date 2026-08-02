@@ -42,10 +42,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Parses file contents into Asts and atoms
-    ///
-    /// ### Returns
-    /// Returns the File Ast for this file
+    /// Parses file contents into an AST
     pub(crate) fn parse_file(&mut self) -> Result<AstId, String> {
         self.get_tokens();
 

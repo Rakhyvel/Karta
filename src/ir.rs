@@ -5,6 +5,7 @@ use crate::{
     builtin::Builtin,
     elaborate::Elaboration,
     interner::AtomId,
+    pattern::PatternId,
     scope::DefId,
 };
 
@@ -214,28 +215,14 @@ impl<'a> Lowerer<'a> {
                 self.lower_ast(*expr)
             }
 
-            Ast::Binding { rhs, .. } => {
+            Ast::Binding { params, rhs, .. } => {
                 let def = self.elab.define(id);
-                let slot = self.lower_ast(*rhs);
+                let slot = self.lower_curried(params, *rhs);
                 self.top_fn_mut().scope.insert(def, slot);
                 slot
             }
 
-            Ast::Lambda { arg, body } => {
-                // Push a new function to the stack, fill it in
-                self.push_fn();
-                let def = self.elab.pattern_define(*arg);
-                let param_slot = self.new_slot();
-                self.top_fn_mut().scope.insert(def, param_slot);
-                let body_slot = self.lower_ast(*body);
-                self.emit(Instr::Ret { src: body_slot });
-
-                let func_id = self.finish_fn();
-
-                let dst = self.new_slot();
-                self.emit(Instr::MakeClosure { dst, func_id });
-                dst
-            }
+            Ast::Lambda { arg, body } => self.lower_lambda(*arg, |this| this.lower_ast(*body)),
 
             Ast::If(conds, else_body) => {
                 let result = self.new_slot();
@@ -284,6 +271,30 @@ impl<'a> Lowerer<'a> {
     fn lower_map(&mut self, pairs: Vec<(Slot, Slot)>) -> Slot {
         let dst = self.new_slot();
         self.emit(Instr::MakeMap { dst, pairs });
+        dst
+    }
+
+    /// Takes a bunch of params [p0, p1, ..., pn], a body, and lowers it to `\p0 -> \p1 -> ... -> \pn -> body`
+    fn lower_curried(&mut self, params: &[PatternId], body: AstId) -> Slot {
+        match params.split_first() {
+            None => self.lower_ast(body),
+            Some((first, rest)) => self.lower_lambda(*first, |this| this.lower_curried(rest, body)),
+        }
+    }
+
+    fn lower_lambda(&mut self, arg: PatternId, lower_body: impl FnOnce(&mut Self) -> Slot) -> Slot {
+        // Push a new function to the stack, fill it in
+        self.push_fn();
+        let def = self.elab.pattern_define(arg);
+        let param_slot = self.new_slot();
+        self.top_fn_mut().scope.insert(def, param_slot);
+        let body_slot = lower_body(self);
+        self.emit(Instr::Ret { src: body_slot });
+
+        let func_id = self.finish_fn();
+
+        let dst = self.new_slot();
+        self.emit(Instr::MakeClosure { dst, func_id });
         dst
     }
 
