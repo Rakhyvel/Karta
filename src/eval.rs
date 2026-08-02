@@ -2,6 +2,7 @@ use std::rc::Rc;
 
 use crate::{
     builtin::Builtin,
+    interner::AtomTable,
     ir::{Function, FunctionId, HeapAddr, Instr, Program, Slot, Value},
 };
 
@@ -50,39 +51,61 @@ enum HeapObj {
     Closure(FunctionId, Vec<Value>),
 }
 
-impl HeapObj {
-    fn map_lookup(&self, key: Value) -> Result<Value, String> {
-        self.as_map()?
-            .iter()
-            .find_map(|(k, v)| (*k == key).then_some(*v))
-            .ok_or_else(|| format!("map didn't contain key {key:?}"))
-    }
-
-    fn as_map(&self) -> Result<&[(Value, Value)], String> {
-        match self {
-            HeapObj::Map(pairs) => Ok(pairs),
-            HeapObj::Closure(..) => Err(String::from("expected a map, found a closure")),
-        }
-    }
-}
-
 struct Heap {
     objs: Vec<HeapObj>,
+
+    // Interned stuff
+    empty_map_addr: HeapAddr,
 }
 
 impl Heap {
     fn new() -> Self {
-        Self { objs: Vec::new() }
+        Self {
+            objs: vec![HeapObj::Map(vec![])],
+            empty_map_addr: HeapAddr::new(0),
+        }
     }
 
+    // pretty-please don't call from outside Heap
     fn alloc(&mut self, obj: HeapObj) -> HeapAddr {
         let retval = HeapAddr::new(self.objs.len() as u32);
         self.objs.push(obj);
         retval
     }
 
+    fn alloc_map(&mut self, pairs: Vec<(Value, Value)>) -> HeapAddr {
+        if pairs.is_empty() {
+            self.empty_map_addr
+        } else {
+            self.alloc(HeapObj::Map(pairs))
+        }
+    }
+
+    fn alloc_closure(&mut self, func_id: FunctionId, values: Vec<Value>) -> HeapAddr {
+        self.alloc(HeapObj::Closure(func_id, values))
+    }
+
     fn deref(&self, addr: HeapAddr) -> &HeapObj {
         &self.objs[addr.as_usize()]
+    }
+
+    fn empty_map(&self) -> Value {
+        Value::Map(self.empty_map_addr)
+    }
+
+    fn map_lookup(&self, addr: HeapAddr, key: Value) -> Result<Value, String> {
+        Ok(self
+            .as_map(addr)?
+            .iter()
+            .find_map(|(k, v)| (*k == key).then_some(*v))
+            .unwrap_or(self.empty_map()))
+    }
+
+    fn as_map(&self, addr: HeapAddr) -> Result<&[(Value, Value)], String> {
+        match self.deref(addr) {
+            HeapObj::Map(pairs) => Ok(pairs),
+            HeapObj::Closure(..) => Err(String::from("expected a map, found a closure")),
+        }
     }
 }
 
@@ -116,21 +139,24 @@ impl Eval {
         match instr {
             Instr::Const { dst, value } => self.store(*dst, *value),
 
+            Instr::Move { dst, src } => {
+                self.store(*dst, self.load(*src));
+            }
+
             Instr::MakeMap { dst, pairs } => {
-                let map = HeapObj::Map(
+                let map_addr = self.heap.alloc_map(
                     pairs
                         .iter()
                         .map(|(k, v)| (self.load(*k), self.load(*v)))
                         .collect(),
                 );
-                let map_slot = self.heap.alloc(map);
-                self.store(*dst, Value::Map(map_slot))
+                self.store(*dst, Value::Map(map_addr))
             }
 
             Instr::MakeClosure { dst, func_id } => {
                 let captures = &self.program.funcs[func_id.as_usize()].captures;
                 let values = captures.iter().map(|(_, src)| self.load(*src)).collect();
-                let func_addr = self.heap.alloc(HeapObj::Closure(*func_id, values));
+                let func_addr = self.heap.alloc_closure(*func_id, values);
                 self.store(*dst, Value::Closure(func_addr))
             }
 
@@ -139,6 +165,15 @@ impl Eval {
                 let rhs = self.load(*rhs);
 
                 self.apply(*dst, lhs, rhs)?;
+            }
+
+            Instr::Jump { target } => self.jump(*target),
+
+            Instr::JumpIfFalse { target, cond } => {
+                let cond_val = self.load(*cond);
+                if !self.is_truthy(cond_val) {
+                    self.jump(*target);
+                }
             }
 
             Instr::Ret { src } => {
@@ -161,9 +196,13 @@ impl Eval {
         self.frame_stack.last_mut().unwrap().store(slot, value);
     }
 
+    fn jump(&mut self, ip: usize) {
+        self.frame_stack.last_mut().unwrap().ip = ip;
+    }
+
     fn apply(&mut self, dst: Slot, lhs: Value, rhs: Value) -> Result<(), String> {
         match lhs {
-            Value::Map(addr) => self.store(dst, self.heap.deref(addr).map_lookup(rhs)?),
+            Value::Map(addr) => self.store(dst, self.heap.map_lookup(addr, rhs)?),
             Value::Closure(addr) => {
                 let HeapObj::Closure(func_id, values) = self.heap.deref(addr) else {
                     unreachable!("closure value pointed at {:?}", addr)
@@ -186,17 +225,71 @@ impl Eval {
 
     fn call_builtin(&self, builtin: Builtin, args: Value) -> Result<Value, String> {
         match builtin {
-            Builtin::Add => self.add(args),
+            Builtin::Eql => self.eql(args),
+            Builtin::Neq => todo!("@neq"),
+            Builtin::Lsr => todo!("@lsr"),
+            Builtin::Lte => todo!("@lte"),
+            Builtin::Gtr => todo!("@gtr"),
+            Builtin::Gte => todo!("@gte"),
+            Builtin::Add => self.arith(args, "add", |a, b| Ok(a + b), |a, b| a + b),
+            Builtin::Sub => self.arith(args, "subtract", |a, b| Ok(a - b), |a, b| a - b),
+            Builtin::Mul => self.arith(args, "multiply", |a, b| Ok(a * b), |a, b| a * b),
+            Builtin::Div => self.arith(
+                args,
+                "divide",
+                |a, b| a.checked_div(b).ok_or_else(|| "division by zero".into()),
+                |a, b| a / b,
+            ),
+            Builtin::Mod => todo!("@mod"),
+            Builtin::And => todo!("@and"),
+            Builtin::Or => todo!("@or"),
+            Builtin::Not => todo!("@not"),
         }
     }
 
-    fn add(&self, args: Value) -> Result<Value, String> {
+    /// Only the empty map `{}` is falsey. Everything else is truthy.
+    fn is_truthy(&self, val: Value) -> bool {
+        val != self.heap.empty_map()
+    }
+
+    fn eql(&self, args: Value) -> Result<Value, String> {
         let (lhs, rhs) = self.get_pair(args)?;
 
         match (lhs, rhs) {
-            (Value::Int(x), Value::Int(y)) => Ok(Value::Int(x + y)),
-            (Value::Float(x), Value::Float(y)) => Ok(Value::Float(x + y)),
-            (lhs, rhs) => Err(format!("cannot add {lhs:?} and {rhs:?}")),
+            (Value::Int(_), Value::Int(_))
+            | (Value::Float(_), Value::Float(_))
+            | (Value::Char(_), Value::Char(_))
+            | (Value::Atom(_), Value::Atom(_))
+            | (Value::Builtin(_), Value::Builtin(_))
+            | (Value::Closure(_), Value::Closure(_)) => Ok(self.make_bool(lhs == rhs)),
+
+            // TODO: actual structural map object equality, for now just compare heap addrs
+            (Value::Map(l_addr), Value::Map(r_addr)) => Ok(self.make_bool(l_addr == r_addr)),
+
+            (Value::Undefined, _) => unreachable!("lhs was undefined"),
+            (_, Value::Undefined) => unreachable!("rhs was undefined"),
+
+            (lhs, rhs) => Err(format!("cannot compare {lhs:?} and {rhs:?}")),
+        }
+    }
+
+    fn arith(
+        &self,
+        args: Value,
+        verb: &str,
+        int_op: impl FnOnce(i64, i64) -> Result<i64, String>,
+        float_op: impl FnOnce(f64, f64) -> f64,
+    ) -> Result<Value, String> {
+        let (lhs, rhs) = self.get_pair(args)?;
+
+        match (lhs, rhs) {
+            (Value::Int(x), Value::Int(y)) => Ok(Value::Int(int_op(x, y)?)),
+            (Value::Float(x), Value::Float(y)) => Ok(Value::Float(float_op(x, y))),
+
+            (Value::Undefined, _) => unreachable!("lhs was undefined"),
+            (_, Value::Undefined) => unreachable!("rhs was undefined"),
+
+            _ => Err(format!("cannot {verb} {lhs:?} and {rhs:?}")),
         }
     }
 
@@ -205,11 +298,17 @@ impl Eval {
             return Err(format!("expected a tuple, got {value:?}"));
         };
 
-        let map_obj = self.heap.deref(addr);
-
-        let lhs = map_obj.map_lookup(Value::Int(0))?;
-        let rhs = map_obj.map_lookup(Value::Int(1))?;
+        let lhs = self.heap.map_lookup(addr, Value::Int(0))?;
+        let rhs = self.heap.map_lookup(addr, Value::Int(1))?;
 
         Ok((lhs, rhs))
+    }
+
+    fn make_bool(&self, cond: bool) -> Value {
+        if cond {
+            Value::Atom(AtomTable::TRUE)
+        } else {
+            self.heap.empty_map()
+        }
     }
 }

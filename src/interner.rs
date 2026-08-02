@@ -50,6 +50,20 @@ pub enum Atom {}
 pub type AtomId = Id<Atom>;
 pub type AtomTable = InternTable<Atom>;
 
+impl AtomTable {
+    pub const TRUE: AtomId = Id {
+        index: 0,
+        _marker: PhantomData,
+    };
+
+    pub fn with_wellknown() -> Self {
+        let mut table = Self::new();
+        let t = table.intern(".t");
+        debug_assert_eq!(t, Self::TRUE);
+        table
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum StringLiteral {}
 pub type StringLiteralId = Id<StringLiteral>;

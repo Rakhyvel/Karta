@@ -104,7 +104,7 @@ impl KartaContext {
     pub fn new() -> Result<Self, String> {
         Ok(Self {
             ast_heap: Arc::new(Mutex::new(AstHeap::new())),
-            atom_table: Arc::new(Mutex::new(AtomTable::new())),
+            atom_table: Arc::new(Mutex::new(AtomTable::with_wellknown())),
             pattern_heap: Arc::new(Mutex::new(PatternHeap::new())),
             symbol_table: Arc::new(Mutex::new(SymbolTable::new())),
             string_literal_table: Arc::new(Mutex::new(StringLiteralTable::new())),

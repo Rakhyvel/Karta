@@ -2,8 +2,8 @@
 ;;; Equality and orderability ;;;
 ;;;                           ;;;
 
-== x y = @eql(x, y)
-!= x y = @neq(x, y)
+== x = {x}
+!= x = ~{x}
 < x y = @lsr(x, y)
 <= x y = @lte(x, y)
 > x y = @gtr(x, y)

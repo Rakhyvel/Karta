@@ -29,14 +29,23 @@ impl FunctionId {
 pub enum Instr {
     Const { dst: Slot, value: Value },
 
+    Move { dst: Slot, src: Slot },
+
     MakeMap { dst: Slot, pairs: Vec<(Slot, Slot)> },
 
     MakeClosure { dst: Slot, func_id: FunctionId },
 
     Apply { dst: Slot, lhs: Slot, rhs: Slot },
 
+    Jump { target: usize },
+
+    JumpIfFalse { target: usize, cond: Slot },
+
     Ret { src: Slot },
 }
+
+#[must_use]
+struct PatchSite(usize);
 
 #[derive(Debug, Clone, PartialEq, Copy)]
 pub enum Value {
@@ -228,6 +237,40 @@ impl<'a> Lowerer<'a> {
                 dst
             }
 
+            Ast::If(conds, else_body) => {
+                let result = self.new_slot();
+                let mut end_sites = Vec::new();
+
+                for (cond_ast, body_ast) in conds {
+                    let cond = self.lower_ast(*cond_ast);
+                    let else_site = self.emit_patchable(Instr::JumpIfFalse {
+                        target: usize::MAX,
+                        cond,
+                    });
+
+                    let body_slot = self.lower_ast(*body_ast);
+                    self.emit(Instr::Move {
+                        dst: result,
+                        src: body_slot,
+                    });
+                    end_sites.push(self.emit_patchable(Instr::Jump { target: usize::MAX }));
+
+                    self.patch_here(else_site);
+                }
+
+                let else_slot = self.lower_ast(*else_body);
+                self.emit(Instr::Move {
+                    dst: result,
+                    src: else_slot,
+                });
+
+                for site in end_sites {
+                    self.patch_here(site);
+                }
+
+                result
+            }
+
             _ => todo!("not implemented: {:?}", ast),
         }
     }
@@ -258,6 +301,10 @@ impl<'a> Lowerer<'a> {
         let id = FunctionId(self.funcs.len() as u32);
         self.funcs.push(function);
         id
+    }
+
+    fn top_fn(&self) -> &FnState {
+        self.stack.last().unwrap()
     }
 
     fn top_fn_mut(&mut self) -> &mut FnState {
@@ -291,5 +338,21 @@ impl<'a> Lowerer<'a> {
 
     fn emit(&mut self, instr: Instr) {
         self.top_fn_mut().instructions.push(instr);
+    }
+
+    fn emit_patchable(&mut self, instr: Instr) -> PatchSite {
+        let idx = self.top_fn().instructions.len();
+        self.emit(instr);
+        PatchSite(idx)
+    }
+
+    fn patch_here(&mut self, site: PatchSite) {
+        let frame = self.top_fn_mut();
+        let curr_idx = frame.instructions.len();
+
+        match &mut frame.instructions[site.0] {
+            Instr::JumpIfFalse { target, .. } | Instr::Jump { target } => *target = curr_idx,
+            other => unreachable!("patch site pointed at {other:?}"),
+        }
     }
 }
