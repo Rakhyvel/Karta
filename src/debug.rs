@@ -4,6 +4,7 @@ use crate::{
     walker::AstVisitor,
 };
 
+#[allow(unused)]
 pub struct TreePrint<'a> {
     asts: &'a AstHeap,
     patterns: &'a PatternHeap,
@@ -11,8 +12,10 @@ pub struct TreePrint<'a> {
 }
 
 impl<'a> TreePrint<'a> {
+    #[allow(unused)]
     const INDENT_WIDTH: usize = 4;
 
+    #[allow(unused)]
     pub fn new(asts: &'a AstHeap, patterns: &'a PatternHeap) -> Self {
         Self {
             asts,

@@ -221,10 +221,10 @@ impl<'a> Lowerer<'a> {
                 slot
             }
 
-            Ast::Lambda(param, body) => {
+            Ast::Lambda { arg, body } => {
                 // Push a new function to the stack, fill it in
                 self.push_fn();
-                let def = self.elab.pattern_define(*param);
+                let def = self.elab.pattern_define(*arg);
                 let param_slot = self.new_slot();
                 self.top_fn_mut().scope.insert(def, param_slot);
                 let body_slot = self.lower_ast(*body);

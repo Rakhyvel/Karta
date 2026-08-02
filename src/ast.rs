@@ -91,16 +91,12 @@ impl AstHeap {
         self.insert(Ast::Apply(lhs, rhs))
     }
 
-    pub(crate) fn create_lambda(&mut self, arg_name: PatternId, expr: AstId) -> AstId {
-        self.insert(Ast::Lambda(arg_name, expr))
+    pub(crate) fn create_lambda(&mut self, arg: PatternId, body: AstId) -> AstId {
+        self.insert(Ast::Lambda { arg, body })
     }
 
     pub(crate) fn create_if(&mut self, conds: Vec<(AstId, AstId)>, else_: AstId) -> AstId {
         self.insert(Ast::If(conds, else_))
-    }
-
-    pub(crate) fn create_panic(&mut self) -> AstId {
-        self.insert(Ast::Panic())
     }
 
     /// Retrieves a reference to an Ast for a given ID, if it exists
@@ -159,13 +155,13 @@ pub(crate) enum Ast {
         params: Vec<PatternId>,
         rhs: AstId,
     },
-    /// A function, with the name of its arg and expression
-    Lambda(PatternId, AstId),
-    /// Closure to represent an applied function
+    /// A function, with an arg and body expression
+    Lambda {
+        arg: PatternId,
+        body: AstId,
+    },
     /// Just a scope for the file
     File(),
 
     If(Vec<(AstId, AstId)>, AstId),
-
-    Panic(),
 }

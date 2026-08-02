@@ -72,7 +72,7 @@ impl<'a> Declare<'a> {
 }
 
 fn opens_scope(ast: &Ast) -> bool {
-    matches!(ast, Ast::Let(..) | Ast::Lambda(..))
+    matches!(ast, Ast::Let(..) | Ast::Lambda { .. })
 }
 
 impl<'a> AstVisitor for Declare<'a> {

@@ -60,7 +60,6 @@ where
             | Ast::Char(_)
             | Ast::Atom(_)
             | Ast::String(_)
-            | Ast::Panic()
             | Ast::File() => {}
 
             Ast::Binding { params, rhs, .. } => {
@@ -70,9 +69,9 @@ where
                 self.walk_ast(*rhs)?;
             }
 
-            Ast::Lambda(pattern_id, ast_id) => {
-                self.walk_pattern(*pattern_id)?;
-                self.walk_ast(*ast_id)?;
+            Ast::Lambda { arg, body } => {
+                self.walk_pattern(*arg)?;
+                self.walk_ast(*body)?;
             }
 
             Ast::Tuple(xs) | Ast::List(xs) => {
