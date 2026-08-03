@@ -4,9 +4,11 @@ use crate::{
     ast::{Ast, AstHeap, AstId},
     builtin::Builtin,
     elaborate::Elaboration,
+    error::{ErrorKind, KartaError},
     interner::AtomId,
     pattern::PatternId,
     scope::DefId,
+    span::Span,
 };
 
 pub struct Function {
@@ -62,7 +64,7 @@ pub enum Value {
 
 impl Value {
     /// Interpret this value as an integer. Does some basic conversions
-    pub fn as_int<T>(&self) -> Result<T, String>
+    pub fn as_int<T>(&self) -> Result<T, KartaError>
     where
         T: From<i64>,
     {
@@ -70,19 +72,31 @@ impl Value {
             Value::Int(x) => Ok(T::from(*x)),
             Value::Float(x) => Ok(T::from(*x as i64)),
             Value::Char(x) => Ok(T::from(*x as i64)),
-            _ => Err(format!("cannot convert {:?} to int", self)),
+            _ => Err(KartaError {
+                span: Span { start: 67, end: 67 },
+                kind: ErrorKind::CannotConvert {
+                    value: *self,
+                    into: "int",
+                },
+            }),
         }
     }
 
     /// Interpret this value as an integer. Does some basic conversions
-    pub fn as_float<T>(&self) -> Result<T, String>
+    pub fn as_float<T>(&self) -> Result<T, KartaError>
     where
         T: From<f64>,
     {
         match self {
             Value::Int(x) => Ok(T::from(*x as f64)),
             Value::Float(x) => Ok(T::from(*x)),
-            _ => Err(format!("cannot convert {:?} to float", self)),
+            _ => Err(KartaError {
+                span: Span { start: 67, end: 67 },
+                kind: ErrorKind::CannotConvert {
+                    value: *self,
+                    into: "float",
+                },
+            }),
         }
     }
 }

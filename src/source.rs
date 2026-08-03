@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use crate::span::Span;
 
 pub struct SourceFile {
@@ -10,12 +8,11 @@ pub struct SourceFile {
 impl SourceFile {
     pub fn new(mut text: String) -> Self {
         text.push('\n');
-        let line_starts = text
-            .chars()
-            .enumerate()
-            .filter_map(|(i, c)| if c == '\n' { Some(i as u32) } else { None })
-            .collect();
-        println!("{:?}", line_starts);
+        let mut line_starts = vec![0];
+        line_starts.extend(
+            text.char_indices()
+                .filter_map(|(i, c)| (c == '\n').then_some(i as u32 + 1)),
+        );
         Self { text, line_starts }
     }
 

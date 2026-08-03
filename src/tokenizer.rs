@@ -1,4 +1,8 @@
-use crate::{source::SourceFile, span::Span};
+use crate::{
+    error::{ErrorKind, KartaError},
+    source::SourceFile,
+    span::Span,
+};
 
 /// Converts file contents text into a stream of tokens
 pub(crate) struct Tokenizer<'a> {
@@ -24,16 +28,16 @@ impl<'a> Tokenizer<'a> {
     }
 
     /// Convert the file contents string into a stream of tokens
-    pub(crate) fn tokenize(&mut self, tokens: &mut Vec<Token>) -> Result<(), String> {
+    pub(crate) fn tokenize(&mut self, tokens: &mut Vec<Token>) -> Result<(), KartaError> {
         while let Some(char) = self.current_char() {
             match self.state {
                 TokenizerState::None => self.handle_none(char),
                 TokenizerState::Whitespace => self.handle_whitespace(char, tokens),
                 TokenizerState::Integer => self.handle_integer(char, tokens),
-                TokenizerState::Atom => self.handle_atom(char, tokens),
-                TokenizerState::Builtin => self.handle_builtin(char, tokens),
-                TokenizerState::Char => self.handle_char(char, tokens)?,
-                TokenizerState::String => self.handle_string(char, tokens)?,
+                TokenizerState::Atom => self.handle_sigiled(TokenKind::Atom, char, tokens),
+                TokenizerState::Builtin => self.handle_sigiled(TokenKind::Builtin, char, tokens),
+                TokenizerState::Char => self.handle_quoted('\'', char, tokens)?,
+                TokenizerState::String => self.handle_quoted('"', char, tokens)?,
                 TokenizerState::Symbol => self.handle_symbol(char, tokens),
                 TokenizerState::Float => self.handle_float(char, tokens),
                 TokenizerState::Comment => self.handle_comment(char),
@@ -105,45 +109,34 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
-    /// Atoms end when the next char isn't a valid atom character
-    fn handle_atom(&mut self, char: char, tokens: &mut Vec<Token>) {
+    /// Create a sigil token (atom or builtin)
+    fn handle_sigiled(&mut self, kind: TokenKind, char: char, tokens: &mut Vec<Token>) {
         if self.eof() || (char.is_whitespace() || self.char_is_singular(char)) {
-            self.add_token(TokenKind::Atom, tokens)
+            self.add_token(kind, tokens)
         } else {
             self.advance(self.state)
         }
     }
 
-    /// Builtins end when the next char isn't a valid builtin character
-    fn handle_builtin(&mut self, char: char, tokens: &mut Vec<Token>) {
-        if self.eof() || (char.is_whitespace() || self.char_is_singular(char)) {
-            self.add_token(TokenKind::Builtin, tokens)
-        } else {
-            self.advance(self.state)
-        }
-    }
-
-    /// Characters end at the second single quote
-    fn handle_char(&mut self, char: char, tokens: &mut Vec<Token>) -> Result<(), String> {
+    /// Quoted tokens end at the second single quote
+    fn handle_quoted(
+        &mut self,
+        quote: char,
+        char: char,
+        tokens: &mut Vec<Token>,
+    ) -> Result<(), KartaError> {
+        // TODO: Escapes
         if self.eof() {
-            Err(String::from("error: char goes to end of file"))
-        } else if char == '\'' {
+            Err(KartaError {
+                span: Span {
+                    start: self.starting_cursor,
+                    end: self.cursor,
+                },
+                kind: ErrorKind::QuotedEof,
+            })
+        } else if char == quote {
             self.advance(TokenizerState::None);
             self.add_token(TokenKind::Char, tokens);
-            Ok(())
-        } else {
-            self.advance(self.state);
-            Ok(())
-        }
-    }
-
-    /// Strings end at the second double quote
-    fn handle_string(&mut self, char: char, tokens: &mut Vec<Token>) -> Result<(), String> {
-        if self.eof() {
-            Err(String::from("error: string goes to end of file"))
-        } else if char == '"' {
-            self.advance(TokenizerState::None);
-            self.add_token(TokenKind::String, tokens);
             Ok(())
         } else {
             self.advance(self.state);
@@ -198,12 +191,7 @@ impl<'a> Tokenizer<'a> {
 
     fn char_is_singular(&self, c: char) -> bool {
         const SINGULAR_CHARS: [char; 8] = ['[', ']', '(', ')', '{', '}', ',', '\\'];
-        for singular_c in SINGULAR_CHARS {
-            if c == singular_c {
-                return true;
-            }
-        }
-        false
+        SINGULAR_CHARS.contains(&c)
     }
 
     fn current_char(&self) -> Option<char> {
@@ -273,7 +261,7 @@ impl Token {
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 /// Represents the various kinds a token can be
-pub(crate) enum TokenKind {
+pub enum TokenKind {
     Newline,
     LeftBrace,
     RightBrace,

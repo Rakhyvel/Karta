@@ -1,6 +1,7 @@
 use crate::{
     ast::{AstHeap, AstId},
     builtin::Builtin,
+    error::{ErrorKind, KartaError},
     interner::{AtomTable, StringLiteralTable, SymbolTable},
     layout,
     pattern::{PatternHeap, PatternId},
@@ -44,7 +45,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parses file contents into an AST
-    pub(crate) fn parse_file(&mut self) -> Result<AstId, String> {
+    pub(crate) fn parse_file(&mut self) -> Result<AstId, KartaError> {
         self.tokens = self.get_tokens();
 
         self.accept_newlines();
@@ -54,7 +55,7 @@ impl<'a> Parser<'a> {
         Ok(self.asts.create_file(self.tokens[0].span))
     }
 
-    pub(crate) fn parse_expr(&mut self) -> Result<AstId, String> {
+    pub(crate) fn parse_expr(&mut self) -> Result<AstId, KartaError> {
         self.tokens = self.get_tokens();
 
         self.let_in_expr()
@@ -81,32 +82,25 @@ impl<'a> Parser<'a> {
 
     /// Determines if the next token in the stream begins an expression
     fn next_is_expr(&self) -> bool {
-        self.peek().kind == TokenKind::Integer
-            || self.peek().kind == TokenKind::Float
-            || self.peek().kind == TokenKind::Char
-            || self.peek().kind == TokenKind::String
-            || self.peek().kind == TokenKind::Atom
-            || self.peek().kind == TokenKind::Builtin
-            || self.peek().kind == TokenKind::Identifier
-            || self.peek().kind == TokenKind::LeftBrace
-            || self.peek().kind == TokenKind::LeftParen
-            || self.peek().kind == TokenKind::LeftSquare
+        matches!(
+            self.peek().kind,
+            TokenKind::Integer
+                | TokenKind::Float
+                | TokenKind::Char
+                | TokenKind::String
+                | TokenKind::Atom
+                | TokenKind::Builtin
+                | TokenKind::Identifier
+                | TokenKind::Indent
+                | TokenKind::LeftBrace
+                | TokenKind::LeftParen
+                | TokenKind::LeftSquare
+        )
     }
 
     /// Returns whether or not the parser is at the end of the stream
     fn eos(&self) -> bool {
         self.cursor >= self.tokens.len() || self.peek().kind == TokenKind::EndOfFile
-    }
-
-    /// Creates a parser error, with an expectation and what was actually received
-    fn parse_error(&self, expected: String, got: String) -> String {
-        format!(
-            "error: {}:{}: expected {}, got {}",
-            self.peek().span.start,
-            self.peek().span.end,
-            expected,
-            got
-        )
     }
 
     /// Pops the token at the begining of the stream if its kind matches the given kind, otherwise None
@@ -119,17 +113,22 @@ impl<'a> Parser<'a> {
     }
 
     /// Pops the token at the begining of the stream if its kind matches the given kind, otherwise Err
-    fn expect(&mut self, kind: TokenKind) -> Result<Token, String> {
-        let peeked = self.peek().kind;
-        let err = self.parse_error(format!("{:?}", kind), format!("{:?}", peeked));
-        self.accept(kind).ok_or(err)
+    fn expect(&mut self, kind: TokenKind) -> Result<Token, KartaError> {
+        let peeked = self.peek();
+        self.accept(kind).ok_or(KartaError {
+            span: peeked.span,
+            kind: ErrorKind::UnexpectedToken2 {
+                expected_kind: kind,
+                got_kind: peeked.kind,
+            },
+        })
     }
 
     fn accept_newlines(&mut self) {
         while self.accept(TokenKind::Newline).is_some() {}
     }
 
-    fn parse_bindings(&mut self, end_kind: TokenKind) -> Result<Vec<AstId>, String> {
+    fn parse_bindings(&mut self, end_kind: TokenKind) -> Result<Vec<AstId>, KartaError> {
         let mut retval = vec![];
         while self.peek().kind != end_kind {
             // Parse the name of this binding
@@ -151,7 +150,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parses binding params in between the binding name and its `=` sign
-    fn parse_pattern_list(&mut self) -> Result<Vec<PatternId>, String> {
+    fn parse_pattern_list(&mut self) -> Result<Vec<PatternId>, KartaError> {
         let mut params = Vec::new();
         // Keep trying to parse exprs until you hit an `=` sign
         while self.accept(TokenKind::Assign).is_none() {
@@ -160,13 +159,9 @@ impl<'a> Parser<'a> {
         Ok(params)
     }
 
-    fn tuple_expr(&mut self) -> Result<AstId, String> {
+    fn tuple_expr(&mut self) -> Result<AstId, KartaError> {
         let expr = self.let_in_expr()?;
-        if let Token {
-            kind: TokenKind::Comma,
-            span,
-        } = self.peek()
-        {
+        if let TokenKind::Comma = self.peek().kind {
             let mut terms = vec![];
             terms.push(expr);
 
@@ -174,18 +169,15 @@ impl<'a> Parser<'a> {
                 terms.push(self.let_in_expr()?);
             }
 
-            Ok(self.asts.make_tuple(span, terms))
+            Ok(self.asts.make_tuple(self.peek().span, terms))
         } else {
             Ok(expr)
         }
     }
 
-    fn let_in_expr(&mut self) -> Result<AstId, String> {
-        match self.peek() {
-            Token {
-                kind: TokenKind::Let,
-                span,
-            } => {
+    fn let_in_expr(&mut self) -> Result<AstId, KartaError> {
+        match self.peek().kind {
+            TokenKind::Let => {
                 self.pop();
                 let bindings: Vec<AstId>;
                 if self.peek().kind == TokenKind::Indent {
@@ -200,29 +192,26 @@ impl<'a> Parser<'a> {
                 }
                 self.expect(TokenKind::In)?;
                 let expr = self.let_in_expr()?;
-                Ok(self.asts.create_let(span, bindings, expr))
+                Ok(self.asts.create_let(self.peek().span, bindings, expr))
             }
             _ => self.lambda_expr(),
         }
     }
 
-    fn lambda_expr(&mut self) -> Result<AstId, String> {
-        match self.peek() {
-            Token {
-                kind: TokenKind::Backslash,
-                span,
-            } => {
+    fn lambda_expr(&mut self) -> Result<AstId, KartaError> {
+        match self.peek().kind {
+            TokenKind::Backslash => {
                 self.pop();
                 let pattern = self.parse_pattern()?;
                 self.expect(TokenKind::Arrow)?;
                 let expr = self.lambda_expr()?;
-                Ok(self.asts.create_lambda(span, pattern, expr))
+                Ok(self.asts.create_lambda(self.peek().span, pattern, expr))
             }
             _ => self.apply_expr(),
         }
     }
 
-    fn apply_expr(&mut self) -> Result<AstId, String> {
+    fn apply_expr(&mut self) -> Result<AstId, KartaError> {
         let mut expr = self.expr()?;
         while self.next_is_expr() {
             let rhs = self.expr()?;
@@ -234,7 +223,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parses an expression
-    fn expr(&mut self) -> Result<AstId, String> {
+    fn expr(&mut self) -> Result<AstId, KartaError> {
         match self.peek().kind {
             TokenKind::Integer => self.parse_integer(),
             TokenKind::Float => self.parse_float(),
@@ -248,43 +237,56 @@ impl<'a> Parser<'a> {
             TokenKind::LeftSquare => self.parse_list(),
             TokenKind::LeftParen => self.parse_parens(),
             TokenKind::Indent => self.parse_indent(),
-            _ => Err(self.parse_error(
-                String::from("an expression"),
-                format!("{:?}", self.peek().kind),
-            )),
+            _ => Err(KartaError {
+                span: self.peek().span,
+                kind: ErrorKind::UnexpectedToken {
+                    expected: "an expression",
+                    token_kind: self.peek().kind,
+                },
+            }),
         }
     }
 
-    fn parse_pattern(&mut self) -> Result<PatternId, String> {
+    fn parse_pattern(&mut self) -> Result<PatternId, KartaError> {
         match self.peek().kind {
             TokenKind::Identifier => self.parse_pattern_identifier(),
-            _ => {
-                Err(self.parse_error(String::from("a pattern"), format!("{:?}", self.peek().kind)))
-            }
+            _ => Err(KartaError {
+                span: self.peek().span,
+                kind: ErrorKind::UnexpectedToken {
+                    expected: "an pattern",
+                    token_kind: self.peek().kind,
+                },
+            }),
         }
     }
 
-    fn parse_integer(&mut self) -> Result<AstId, String> {
+    fn parse_integer(&mut self) -> Result<AstId, KartaError> {
         let token = self.expect(TokenKind::Integer)?;
         let value = self
             .source
             .span_text(token.span)
             .parse::<i64>()
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| KartaError {
+                span: token.span,
+                kind: ErrorKind::ParseIntError(e),
+            })?;
         Ok(self.asts.create_int(token.span, value))
     }
 
-    fn parse_float(&mut self) -> Result<AstId, String> {
+    fn parse_float(&mut self) -> Result<AstId, KartaError> {
         let token = self.expect(TokenKind::Float)?;
         let value = self
             .source
             .span_text(token.span)
             .parse::<f64>()
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| KartaError {
+                span: token.span,
+                kind: ErrorKind::ParseFloatError(e),
+            })?;
         Ok(self.asts.create_float(token.span, value))
     }
 
-    fn parse_char(&mut self) -> Result<AstId, String> {
+    fn parse_char(&mut self) -> Result<AstId, KartaError> {
         let token = self.expect(TokenKind::Char)?;
         Ok(self.asts.create_char(
             token.span,
@@ -292,42 +294,47 @@ impl<'a> Parser<'a> {
         ))
     }
 
-    fn parse_string(&mut self) -> Result<AstId, String> {
+    fn parse_string(&mut self) -> Result<AstId, KartaError> {
         let token_span = self.expect(TokenKind::String)?.span;
         let token_text = self.source.span_text(token_span);
         let string_literal_id = self.strings.intern(token_text);
         Ok(self.asts.create_string(token_span, string_literal_id))
     }
 
-    fn parse_atom(&mut self) -> Result<AstId, String> {
+    fn parse_atom(&mut self) -> Result<AstId, KartaError> {
         let token_span = self.expect(TokenKind::Atom)?.span;
         let token_text = self.source.span_text(token_span);
         let atom_id = self.atoms.intern(token_text);
         Ok(self.asts.create_atom(token_span, atom_id))
     }
 
-    fn parse_builtin(&mut self) -> Result<AstId, String> {
+    fn parse_builtin(&mut self) -> Result<AstId, KartaError> {
         let name_span = self.expect(TokenKind::Builtin)?.span;
         let name_text = self.source.span_text(name_span);
-        let builtin = Builtin::parse(name_text).ok_or(format!("unknown builtin `{name_text}`"))?;
+        let builtin = Builtin::parse(name_text).ok_or(KartaError {
+            span: name_span,
+            kind: ErrorKind::UnknownBuiltin {
+                name: String::from(name_text),
+            },
+        })?;
         Ok(self.asts.create_builtin_function(name_span, builtin))
     }
 
-    fn parse_identifier(&mut self) -> Result<AstId, String> {
+    fn parse_identifier(&mut self) -> Result<AstId, KartaError> {
         let name_span = self.expect(TokenKind::Identifier)?.span;
         let name_text = self.source.span_text(name_span);
         let name = self.symbols.intern(name_text);
         Ok(self.asts.create_identifier(name_span, name))
     }
 
-    fn parse_pattern_identifier(&mut self) -> Result<PatternId, String> {
+    fn parse_pattern_identifier(&mut self) -> Result<PatternId, KartaError> {
         let name_span = self.expect(TokenKind::Identifier)?.span;
         let name_text = self.source.span_text(name_span);
         let name = self.symbols.intern(name_text);
         Ok(self.patterns.create_identifier(name_span, name))
     }
 
-    fn parse_if_expr(&mut self) -> Result<AstId, String> {
+    fn parse_if_expr(&mut self) -> Result<AstId, KartaError> {
         let token = self.expect(TokenKind::If)?;
         let mut conds = vec![];
         let condition = self.let_in_expr()?;
@@ -347,7 +354,7 @@ impl<'a> Parser<'a> {
         Ok(self.asts.create_if(token.span, conds, else_))
     }
 
-    fn parse_map(&mut self) -> Result<AstId, String> {
+    fn parse_map(&mut self) -> Result<AstId, KartaError> {
         let token = self.expect(TokenKind::LeftBrace)?;
         let mut children: Vec<(AstId, AstId)> = Vec::new();
 
@@ -370,7 +377,7 @@ impl<'a> Parser<'a> {
         Ok(self.asts.create_map(token.span, children))
     }
 
-    fn parse_map_elem(&mut self, truthy_atom: AstId) -> Result<(AstId, AstId), String> {
+    fn parse_map_elem(&mut self, truthy_atom: AstId) -> Result<(AstId, AstId), KartaError> {
         let key = self.let_in_expr()?;
 
         if let Some(_token) = self.accept(TokenKind::Assign) {
@@ -383,7 +390,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_list(&mut self) -> Result<AstId, String> {
+    fn parse_list(&mut self) -> Result<AstId, KartaError> {
         let token = self.expect(TokenKind::LeftSquare)?;
 
         let mut children = Vec::new();
@@ -400,14 +407,14 @@ impl<'a> Parser<'a> {
         Ok(self.asts.make_list(token.span, children))
     }
 
-    fn parse_parens(&mut self) -> Result<AstId, String> {
+    fn parse_parens(&mut self) -> Result<AstId, KartaError> {
         self.expect(TokenKind::LeftParen)?;
         let retval = self.tuple_expr()?;
         self.expect(TokenKind::RightParen)?;
         Ok(retval)
     }
 
-    fn parse_indent(&mut self) -> Result<AstId, String> {
+    fn parse_indent(&mut self) -> Result<AstId, KartaError> {
         self.expect(TokenKind::Indent)?;
         let retval = self.lambda_expr()?;
         self.accept_newlines();

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     ast::{Ast, AstHeap, AstId},
-    interner::SymbolTable,
+    error::{ErrorKind, KartaError},
     pattern::{Pattern, PatternHeap, PatternId},
     scope::{DefArena, DefId, DefKind, ScopeArena, ScopeId},
     walker::AstVisitor,
@@ -76,7 +76,7 @@ fn opens_scope(ast: &Ast) -> bool {
 }
 
 impl<'a> AstVisitor for Declare<'a> {
-    type Error = String;
+    type Error = KartaError;
 
     fn enter_ast(&mut self, id: AstId) -> Result<(), Self::Error> {
         let this_scope_id = *self
@@ -144,22 +144,17 @@ impl<'a> AstVisitor for Declare<'a> {
 
 pub struct Resolve<'a> {
     asts: &'a AstHeap,
-    symbols: &'a SymbolTable,
     elab: &'a mut Elaboration,
 }
 
 impl<'a> Resolve<'a> {
-    pub fn new(asts: &'a AstHeap, symbols: &'a SymbolTable, elab: &'a mut Elaboration) -> Self {
-        Self {
-            asts,
-            symbols,
-            elab,
-        }
+    pub fn new(asts: &'a AstHeap, elab: &'a mut Elaboration) -> Self {
+        Self { asts, elab }
     }
 }
 
 impl<'a> AstVisitor for Resolve<'a> {
-    type Error = String;
+    type Error = KartaError;
 
     fn enter_ast(&mut self, id: AstId) -> Result<(), Self::Error> {
         let ast = self.asts.get(id).expect("got an invalid AST id");
@@ -174,7 +169,10 @@ impl<'a> AstVisitor for Resolve<'a> {
                 .elab
                 .scopes
                 .lookup_ident(*sym, ast_scope_id)
-                .ok_or(format!("undefined reference to {}", self.symbols.get(*sym)))?;
+                .ok_or(KartaError {
+                    span: self.asts.span(id),
+                    kind: ErrorKind::UnresolvedIdentifier { sym: *sym },
+                })?;
             self.elab.references.insert(id, def_id);
         }
 

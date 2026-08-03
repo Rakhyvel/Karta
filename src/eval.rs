@@ -2,8 +2,10 @@ use std::rc::Rc;
 
 use crate::{
     builtin::Builtin,
+    error::{ErrorKind, KartaError},
     interner::AtomTable,
     ir::{Function, FunctionId, HeapAddr, Instr, Program, Slot, Value},
+    span::Span,
 };
 
 pub struct Eval {
@@ -93,7 +95,7 @@ impl Heap {
         Value::Map(self.empty_map_addr)
     }
 
-    fn map_lookup(&self, addr: HeapAddr, key: Value) -> Result<Value, String> {
+    fn map_lookup(&self, addr: HeapAddr, key: Value) -> Result<Value, KartaError> {
         Ok(self
             .as_map(addr)?
             .iter()
@@ -101,10 +103,16 @@ impl Heap {
             .unwrap_or(self.empty_map()))
     }
 
-    fn as_map(&self, addr: HeapAddr) -> Result<&[(Value, Value)], String> {
+    fn as_map(&self, addr: HeapAddr) -> Result<&[(Value, Value)], KartaError> {
         match self.deref(addr) {
             HeapObj::Map(pairs) => Ok(pairs),
-            HeapObj::Closure(..) => Err(String::from("expected a map, found a closure")),
+            HeapObj::Closure(..) => Err(KartaError {
+                span: Span { start: 67, end: 67 },
+                kind: ErrorKind::UnexpectedGot {
+                    expected: "map",
+                    got: "closure",
+                },
+            }),
         }
     }
 }
@@ -122,7 +130,7 @@ impl Eval {
         }
     }
 
-    pub fn eval(&mut self) -> Result<Value, String> {
+    pub fn eval(&mut self) -> Result<Value, KartaError> {
         while let Some(frame) = self.frame_stack.last_mut() {
             let instrs = frame.instrs.clone();
 
@@ -135,7 +143,7 @@ impl Eval {
         Ok(self.result)
     }
 
-    fn execute_instruction(&mut self, instr: &Instr) -> Result<(), String> {
+    fn execute_instruction(&mut self, instr: &Instr) -> Result<(), KartaError> {
         match instr {
             Instr::Const { dst, value } => self.store(*dst, *value),
 
@@ -200,7 +208,7 @@ impl Eval {
         self.frame_stack.last_mut().unwrap().ip = ip;
     }
 
-    fn apply(&mut self, dst: Slot, lhs: Value, rhs: Value) -> Result<(), String> {
+    fn apply(&mut self, dst: Slot, lhs: Value, rhs: Value) -> Result<(), KartaError> {
         match lhs {
             Value::Map(addr) => self.store(dst, self.heap.map_lookup(addr, rhs)?),
             Value::Closure(addr) => {
@@ -218,12 +226,21 @@ impl Eval {
                 self.frame_stack.push(frame);
             }
             Value::Builtin(builtin) => self.store(dst, self.call_builtin(builtin, rhs)?),
-            _ => return Err(format!("can't apply to a {lhs:?}")),
+            _ => {
+                return Err(KartaError {
+                    span: Span { start: 67, end: 67 },
+                    kind: ErrorKind::CannotBinop {
+                        verb: "apply",
+                        lhs,
+                        rhs,
+                    },
+                })
+            }
         }
         Ok(())
     }
 
-    fn call_builtin(&self, builtin: Builtin, args: Value) -> Result<Value, String> {
+    fn call_builtin(&self, builtin: Builtin, args: Value) -> Result<Value, KartaError> {
         match builtin {
             Builtin::Eql => self.eql(args),
             Builtin::Neq => todo!("@neq"),
@@ -237,7 +254,12 @@ impl Eval {
             Builtin::Div => self.arith(
                 args,
                 "divide",
-                |a, b| a.checked_div(b).ok_or_else(|| "division by zero".into()),
+                |a, b| {
+                    a.checked_div(b).ok_or(KartaError {
+                        span: Span { start: 67, end: 67 },
+                        kind: ErrorKind::DivisionByZero,
+                    })
+                },
                 |a, b| a / b,
             ),
             Builtin::Mod => todo!("@mod"),
@@ -252,7 +274,7 @@ impl Eval {
         val != self.heap.empty_map()
     }
 
-    fn eql(&self, args: Value) -> Result<Value, String> {
+    fn eql(&self, args: Value) -> Result<Value, KartaError> {
         let (lhs, rhs) = self.get_pair(args)?;
 
         match (lhs, rhs) {
@@ -269,17 +291,24 @@ impl Eval {
             (Value::Undefined, _) => unreachable!("lhs was undefined"),
             (_, Value::Undefined) => unreachable!("rhs was undefined"),
 
-            (lhs, rhs) => Err(format!("cannot compare {lhs:?} and {rhs:?}")),
+            (lhs, rhs) => Err(KartaError {
+                span: Span { start: 67, end: 67 },
+                kind: ErrorKind::CannotBinop {
+                    verb: "compare",
+                    lhs,
+                    rhs,
+                },
+            }),
         }
     }
 
     fn arith(
         &self,
         args: Value,
-        verb: &str,
-        int_op: impl FnOnce(i64, i64) -> Result<i64, String>,
+        verb: &'static str,
+        int_op: impl FnOnce(i64, i64) -> Result<i64, KartaError>,
         float_op: impl FnOnce(f64, f64) -> f64,
-    ) -> Result<Value, String> {
+    ) -> Result<Value, KartaError> {
         let (lhs, rhs) = self.get_pair(args)?;
 
         match (lhs, rhs) {
@@ -289,13 +318,22 @@ impl Eval {
             (Value::Undefined, _) => unreachable!("lhs was undefined"),
             (_, Value::Undefined) => unreachable!("rhs was undefined"),
 
-            _ => Err(format!("cannot {verb} {lhs:?} and {rhs:?}")),
+            _ => Err(KartaError {
+                span: Span { start: 67, end: 67 },
+                kind: ErrorKind::CannotBinop { verb, lhs, rhs },
+            }),
         }
     }
 
-    fn get_pair(&self, value: Value) -> Result<(Value, Value), String> {
+    fn get_pair(&self, value: Value) -> Result<(Value, Value), KartaError> {
         let Value::Map(addr) = value else {
-            return Err(format!("expected a tuple, got {value:?}"));
+            return Err(KartaError {
+                span: Span { start: 67, end: 67 },
+                kind: ErrorKind::UnexpectedValue {
+                    expected: "tuple",
+                    value,
+                },
+            });
         };
 
         let lhs = self.heap.map_lookup(addr, Value::Int(0))?;

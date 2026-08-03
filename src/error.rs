@@ -1,11 +1,23 @@
+use std::num;
+
 use crate::{interner::SymbolId, ir::Value, span::Span, tokenizer::TokenKind};
 
-pub struct Error {
-    span: Span,
-    kind: ErrorKind,
+#[derive(Debug, Clone)]
+pub struct KartaError {
+    pub span: Span,
+    pub kind: ErrorKind,
 }
 
+#[derive(Debug, Clone)]
 pub enum ErrorKind {
+    CannotOpenFile {
+        filename: String,
+    },
+    ParseIntError(num::ParseIntError),
+    ParseFloatError(num::ParseFloatError),
+    UnknownBuiltin {
+        name: String,
+    },
     CannotBinop {
         verb: &'static str,
         lhs: Value,
@@ -19,13 +31,21 @@ pub enum ErrorKind {
         expected: &'static str,
         token_kind: TokenKind,
     },
+    UnexpectedToken2 {
+        expected_kind: TokenKind,
+        got_kind: TokenKind,
+    },
     UnexpectedValue {
         expected: &'static str,
         value: Value,
     },
+    UnexpectedGot {
+        expected: &'static str,
+        got: &'static str,
+    },
     UnresolvedIdentifier {
         sym: SymbolId,
     },
-    CharEof,
-    StringEof,
+    DivisionByZero,
+    QuotedEof,
 }
