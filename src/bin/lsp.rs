@@ -1,9 +1,13 @@
-use karta::{source::SourceFile, span::Span, KartaContext};
-use lsp_server::{Connection, Message, ProtocolError};
+use std::collections::HashMap;
+
+use karta::{source::SourceFile, span::Span, tokenizer::TokenKind, KartaContext};
+use lsp_server::{Connection, Message, ProtocolError, Response};
 use lsp_types::{
-    Diagnostic, DiagnosticSeverity, DidChangeTextDocumentParams, DidOpenTextDocumentParams,
-    Position, PublishDiagnosticsParams, Range, ServerCapabilities, TextDocumentSyncCapability,
-    TextDocumentSyncKind, Url,
+    Diagnostic, DiagnosticSeverity, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
+    DidOpenTextDocumentParams, Position, PublishDiagnosticsParams, Range, SemanticToken,
+    SemanticTokenModifier, SemanticTokenType, SemanticTokens, SemanticTokensFullOptions,
+    SemanticTokensLegend, SemanticTokensOptions, SemanticTokensParams, ServerCapabilities,
+    TextDocumentSyncCapability, TextDocumentSyncKind, Url,
 };
 
 pub fn main() -> Result<(), ProtocolError> {
@@ -13,12 +17,32 @@ pub fn main() -> Result<(), ProtocolError> {
     eprintln!("Constructing capabilities...");
     let capabilities = serde_json::to_value(ServerCapabilities {
         text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
+        semantic_tokens_provider: Some(
+            SemanticTokensOptions {
+                legend: SemanticTokensLegend {
+                    token_types: vec![
+                        SemanticTokenType::KEYWORD,
+                        SemanticTokenType::NUMBER,
+                        SemanticTokenType::STRING,
+                        SemanticTokenType::ENUM_MEMBER,
+                        SemanticTokenType::FUNCTION,
+                        SemanticTokenType::VARIABLE,
+                        SemanticTokenType::OPERATOR,
+                    ],
+                    token_modifiers: vec![SemanticTokenModifier::DEFAULT_LIBRARY],
+                },
+                full: Some(SemanticTokensFullOptions::Bool(true)),
+                ..Default::default()
+            }
+            .into(),
+        ),
         ..Default::default()
     })
     .unwrap();
 
     eprintln!("Initializing...");
     let _init_params = connection.initialize(capabilities).unwrap();
+    let mut docs: HashMap<Url, String> = HashMap::new();
 
     eprintln!("Waiting for messages...");
     for msg in &connection.receiver {
@@ -28,29 +52,104 @@ pub fn main() -> Result<(), ProtocolError> {
                     break;
                 }
 
+                if req.method == "textDocument/semanticTokens/full" {
+                    let params =
+                        serde_json::from_value::<SemanticTokensParams>(req.params).unwrap();
+
+                    let doc = docs.get(&params.text_document.uri);
+
+                    let mut data: Vec<SemanticToken> = Vec::new();
+
+                    if let Some(text) = doc {
+                        let mut kctx = KartaContext::new();
+                        let analysis = kctx.analyze(text);
+
+                        let (mut prev_line, mut prev_start) = (0u32, 0u32);
+                        for tok in analysis.tokens.iter().filter(|t| is_visible(t.kind)) {
+                            let Some((token_type, modifiers)) = semantic_kind(tok.kind) else {
+                                continue;
+                            };
+
+                            let (line, start) = analysis.source.line_col_utf16(tok.span.start);
+                            let length =
+                                analysis.source.span_text(tok.span).encode_utf16().count() as u32;
+
+                            let delta_line = line - prev_line;
+                            let delta_start = if delta_line == 0 {
+                                start - prev_start
+                            } else {
+                                start
+                            };
+
+                            data.push(SemanticToken {
+                                delta_line,
+                                delta_start,
+                                length,
+                                token_type,
+                                token_modifiers_bitset: modifiers,
+                            });
+                            (prev_line, prev_start) = (line, start);
+                        }
+                    }
+
+                    connection
+                        .sender
+                        .send(Message::Response(Response {
+                            id: req.id,
+                            result: Some(
+                                serde_json::to_value(SemanticTokens {
+                                    result_id: None,
+                                    data,
+                                })
+                                .unwrap(),
+                            ),
+                            error: None,
+                        }))
+                        .unwrap();
+                }
+
                 eprintln!("got req: {}", req.method.as_str());
             }
 
             Message::Notification(not) => {
                 let doc = match not.method.as_str() {
                     "textDocument/didOpen" => {
-                        serde_json::from_value::<DidOpenTextDocumentParams>(not.params)
-                            .ok()
-                            .map(|p| {
-                                (
-                                    p.text_document.uri,
-                                    p.text_document.version,
-                                    p.text_document.text,
-                                )
-                            })
+                        let params =
+                            serde_json::from_value::<DidOpenTextDocumentParams>(not.params)
+                                .unwrap();
+
+                        docs.insert(
+                            params.text_document.uri.clone(),
+                            params.text_document.text.clone(),
+                        );
+
+                        Some((
+                            params.text_document.uri,
+                            params.text_document.version,
+                            params.text_document.text,
+                        ))
                     }
+
                     "textDocument/didChange" => {
-                        serde_json::from_value::<DidChangeTextDocumentParams>(not.params)
-                            .ok()
-                            .and_then(|p| {
-                                let text = p.content_changes.into_iter().next()?.text;
-                                Some((p.text_document.uri, p.text_document.version, text))
-                            })
+                        let params =
+                            serde_json::from_value::<DidChangeTextDocumentParams>(not.params)
+                                .unwrap();
+
+                        let text = params.content_changes.into_iter().next().unwrap().text;
+
+                        docs.insert(params.text_document.uri.clone(), text.clone());
+
+                        Some((params.text_document.uri, params.text_document.version, text))
+                    }
+
+                    "textDocument/didClose" => {
+                        let params =
+                            serde_json::from_value::<DidCloseTextDocumentParams>(not.params)
+                                .unwrap();
+
+                        docs.remove(&params.text_document.uri);
+
+                        None
                     }
 
                     _ => None,
@@ -112,4 +211,42 @@ fn span_to_range(src: &SourceFile, span: Span) -> Range {
             character: ec,
         },
     }
+}
+
+fn is_visible(kind: TokenKind) -> bool {
+    !matches!(
+        kind,
+        TokenKind::Dedent | TokenKind::EndOfFile | TokenKind::Indent | TokenKind::Newline
+    )
+}
+
+fn semantic_kind(kind: TokenKind) -> Option<(u32, u32)> {
+    const KEYWORD: u32 = 0;
+    const NUMBER: u32 = 1;
+    const STRING: u32 = 2;
+    const ATOM: u32 = 3;
+    const FUNCTION: u32 = 4;
+    const VARIABLE: u32 = 5;
+    const OPERATOR: u32 = 6;
+
+    const DEFAULT_LIBRARY: u32 = 1 << 0;
+
+    Some(match kind {
+        TokenKind::Let
+        | TokenKind::In
+        | TokenKind::If
+        | TokenKind::Then
+        | TokenKind::Elif
+        | TokenKind::Else => (KEYWORD, 0),
+
+        TokenKind::Integer | TokenKind::Float => (NUMBER, 0),
+        TokenKind::String | TokenKind::Char => (STRING, 0),
+        TokenKind::Atom => (ATOM, 0),
+        TokenKind::Builtin => (FUNCTION, DEFAULT_LIBRARY),
+        TokenKind::Identifier => (VARIABLE, 0),
+
+        TokenKind::Arrow | TokenKind::Assign | TokenKind::Backslash => (OPERATOR, 0),
+
+        _ => return None,
+    })
 }

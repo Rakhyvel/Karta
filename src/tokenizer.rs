@@ -257,6 +257,10 @@ impl Token {
     pub fn len(&self) -> u32 {
         self.span.end - self.span.start
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 #[derive(PartialEq, Clone, Copy, Debug)]

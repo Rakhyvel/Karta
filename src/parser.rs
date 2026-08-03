@@ -13,7 +13,7 @@ use crate::{
 /// Parses a stream of tokens into Asts
 pub(crate) struct Parser<'a> {
     cursor: usize,
-    tokens: Vec<Token>,
+    tokens: &'a Vec<Token>,
     source: &'a SourceFile,
     asts: &'a mut AstHeap,
     patterns: &'a mut PatternHeap,
@@ -26,6 +26,7 @@ impl<'a> Parser<'a> {
     /// Creates a new Parser
     pub(crate) fn new(
         source: &'a SourceFile,
+        tokens: &'a Vec<Token>,
         asts: &'a mut AstHeap,
         patterns: &'a mut PatternHeap,
         symbols: &'a mut SymbolTable,
@@ -34,7 +35,7 @@ impl<'a> Parser<'a> {
     ) -> Self {
         Self {
             cursor: 0,
-            tokens: vec![],
+            tokens,
             source,
             asts,
             patterns,
@@ -46,8 +47,6 @@ impl<'a> Parser<'a> {
 
     /// Parses file contents into an AST
     pub(crate) fn parse_file(&mut self) -> Result<AstId, KartaError> {
-        self.tokens = self.get_tokens();
-
         self.accept_newlines();
 
         let bindings = self.parse_bindings(TokenKind::EndOfFile)?;
@@ -56,17 +55,7 @@ impl<'a> Parser<'a> {
     }
 
     pub(crate) fn parse_expr(&mut self) -> Result<AstId, KartaError> {
-        self.tokens = self.get_tokens();
-
         self.let_in_expr()
-    }
-
-    /// Creates a tokenizer, uses it to tokenize `file_contents` into the parser's token vec, then applies
-    /// `layout` to the token stream.
-    fn get_tokens(&mut self) -> Vec<Token> {
-        let mut tokenizer = Tokenizer::new(self.source);
-        tokenizer.tokenize(&mut self.tokens).unwrap();
-        layout::layout(&self.tokens)
     }
 
     /// Returns the token at the begining of the stream without removing it

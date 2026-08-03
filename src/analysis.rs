@@ -1,10 +1,10 @@
 use crate::{
     elaborate::{Declare, Resolve},
     error::KartaError,
+    layout,
     parser::Parser,
     source::SourceFile,
-    span::Span,
-    tokenizer::TokenKind,
+    tokenizer::{Token, Tokenizer},
     walker::AstWalker,
     KartaContext,
 };
@@ -12,16 +12,30 @@ use crate::{
 pub struct Analysis {
     pub source: SourceFile,
     pub diagnostics: Vec<KartaError>,
-    pub tokens: Vec<(Span, TokenKind)>,
+    pub tokens: Vec<Token>,
 }
 
 impl KartaContext {
     pub fn analyze(&mut self, text: impl ToString) -> Analysis {
-        let mut diagnostics = vec![];
-        let source = SourceFile::new(text.to_string());
+        let mut analysis = Analysis {
+            source: SourceFile::new(text.to_string()),
+            diagnostics: vec![],
+            tokens: vec![],
+        };
+
+        let mut tokenizer = Tokenizer::new(&analysis.source);
+        match tokenizer.tokenize(&mut analysis.tokens) {
+            Ok(_) => {}
+            Err(err) => {
+                analysis.diagnostics.push(err);
+                return analysis;
+            }
+        }
+        let tokens = layout::layout(&analysis.tokens);
 
         let mut parser = Parser::new(
-            &source,
+            &analysis.source,
+            &tokens,
             &mut self.ast_heap,
             &mut self.pattern_heap,
             &mut self.symbol_table,
@@ -32,12 +46,8 @@ impl KartaContext {
         let expr_ast = match parser.parse_file() {
             Ok(ok) => ok,
             Err(err) => {
-                diagnostics.push(err);
-                return Analysis {
-                    source,
-                    diagnostics,
-                    tokens: vec![],
-                };
+                analysis.diagnostics.push(err);
+                return analysis;
             }
         };
 
@@ -49,12 +59,8 @@ impl KartaContext {
         ) {
             Ok(_) => {}
             Err(err) => {
-                diagnostics.push(err);
-                return Analysis {
-                    source,
-                    diagnostics,
-                    tokens: vec![],
-                };
+                analysis.diagnostics.push(err);
+                return analysis;
             }
         }
 
@@ -66,14 +72,11 @@ impl KartaContext {
         ) {
             Ok(_) => {}
             Err(err) => {
-                diagnostics.push(err);
+                analysis.diagnostics.push(err);
+                return analysis;
             }
         }
 
-        Analysis {
-            source,
-            diagnostics,
-            tokens: vec![],
-        }
+        analysis
     }
 }

@@ -13,7 +13,7 @@ mod pattern;
 mod scope;
 pub mod source;
 pub mod span;
-mod tokenizer;
+pub mod tokenizer;
 mod walker;
 
 use std::fs;
@@ -30,6 +30,7 @@ use crate::{
     pattern::PatternHeap,
     source::SourceFile,
     span::Span,
+    tokenizer::Tokenizer,
     walker::AstWalker,
 };
 
@@ -92,8 +93,14 @@ impl KartaContext {
     ) -> Result<(), KartaError> {
         let source = SourceFile::new(file_contents.to_string());
 
+        let mut tokenizer = Tokenizer::new(&source);
+        let mut old_tokens = vec![];
+        tokenizer.tokenize(&mut old_tokens)?;
+        let tokens = layout::layout(&old_tokens);
+
         let mut parser = Parser::new(
             &source,
+            &tokens,
             &mut self.ast_heap,
             &mut self.pattern_heap,
             &mut self.symbol_table,
@@ -110,8 +117,14 @@ impl KartaContext {
     pub fn eval(&mut self, expr_str: impl ToString) -> Result<Value, KartaError> {
         let source = SourceFile::new(expr_str.to_string());
 
+        let mut tokenizer = Tokenizer::new(&source);
+        let mut old_tokens = vec![];
+        tokenizer.tokenize(&mut old_tokens)?;
+        let tokens = layout::layout(&old_tokens);
+
         let mut parser = Parser::new(
             &source,
+            &tokens,
             &mut self.ast_heap,
             &mut self.pattern_heap,
             &mut self.symbol_table,
