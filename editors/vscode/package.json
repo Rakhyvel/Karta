@@ -37,7 +37,14 @@
                     "default": "verbose"
                 }
             }
-        }
+        },
+        "grammars": [
+            {
+                "language": "karta",
+                "scopeName": "source.karta",
+                "path": "./syntaxes/karta.tmLanguage.json"
+            }
+        ]
     },
     "scripts": {
         "compile": "tsc -p ./"

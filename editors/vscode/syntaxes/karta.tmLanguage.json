@@ -1,0 +1,88 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Karta",
+  "scopeName": "source.karta",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#string" },
+    { "include": "#char" },
+    { "include": "#number" },
+    { "include": "#atom" },
+    { "include": "#builtin" },
+    { "include": "#keyword" },
+    { "include": "#lambda" },
+    { "include": "#operator" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "comment": {
+      "name": "comment.line.semicolon.karta",
+      "match": ";.*$"
+    },
+
+    "string": {
+      "name": "string.quoted.double.karta",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        { "name": "constant.character.escape.karta", "match": "\\\\." }
+      ]
+    },
+
+    "char": {
+      "name": "string.quoted.single.karta",
+      "match": "'([^'\\\\]|\\\\.)'"
+    },
+
+    "number": {
+      "patterns": [
+        {
+          "name": "constant.numeric.float.karta",
+          "match": "(?<![\\w'?-])\\d+\\.\\d+"
+        },
+        {
+          "name": "constant.numeric.integer.karta",
+          "match": "(?<![\\w'?-])\\d+"
+        }
+      ]
+    },
+
+    "atom": {
+      "name": "constant.language.atom.karta",
+      "match": "(?<![\\w'?-])\\.[A-Za-z_][\\w'?-]*"
+    },
+
+    "builtin": {
+      "name": "support.function.builtin.karta",
+      "match": "@[A-Za-z_][\\w'?-]*"
+    },
+
+    "keyword": {
+      "name": "keyword.control.karta",
+      "match": "(?<![\\w'?-])(let|in|if|then|elif|else)(?![\\w'?-])"
+    },
+
+    "lambda": {
+      "name": "keyword.operator.lambda.karta",
+      "match": "\\\\"
+    },
+
+    "operator": {
+      "name": "keyword.operator.karta",
+      "match": "(->|[=+\\-*/%<>!&|~^]+)"
+    },
+
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.section.brackets.karta",
+          "match": "[{}\\[\\]()]"
+        },
+        {
+          "name": "punctuation.separator.comma.karta",
+          "match": ","
+        }
+      ]
+    }
+  }
+}
