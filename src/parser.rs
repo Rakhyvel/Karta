@@ -161,7 +161,9 @@ impl<'a> Parser<'a> {
         let params: Vec<PatternId> = self.parse_pattern_list()?;
 
         // Parse the RHS after the `=`
-        let rhs_value = self.let_in_expr()?;
+        let rhs_value = self
+            .let_in_expr()
+            .unwrap_or(self.asts.create_error(self.peek().span));
         self.accept_newlines();
 
         // Create the binding

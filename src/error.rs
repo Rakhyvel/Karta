@@ -46,7 +46,7 @@ impl Display for ErrorKind {
             ErrorKind::UnresolvedIdentifier { symbol_name } => {
                 write!(f, "cannot resolve symbol `{symbol_name}`")
             }
-            ErrorKind::DivisionByZero => write!(f, "division by zeor"),
+            ErrorKind::DivisionByZero => write!(f, "division by zero"),
             ErrorKind::QuotedEof => write!(f, "unterminated quoted literal"),
         }
     }

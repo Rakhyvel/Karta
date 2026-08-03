@@ -1,5 +1,6 @@
 ### language
 - [ ] lower strings, chars, tokenize escapes
+- [ ] knot-tying
 - [ ] pattern matching arms
     - [ ] basic integer, float, char, atom patterns
     - [ ] map patterns (and map structural equality)
@@ -11,6 +12,7 @@
 - [ ] define all builtins
 - [ ] store an error list, pass that along
 - [ ] core.k
+- [ ] runtime spans in eval, stack trace on eval panic
 - [ ] applicable algebra
     - [ ] union
     - [ ] intersection
@@ -25,6 +27,8 @@
 - [ ] repl
 
 ### lang server
-- [ ] semantic tokens
+- [x] semantic tokens
+    - [ ] parameter coloring? or make non-func bindings more constant-looking?
+- [ ] cache Analysis per URI, don't analyze twice per keystroke
 - [ ] goto def
 - [ ] click-to-run (just eval the symbol)
