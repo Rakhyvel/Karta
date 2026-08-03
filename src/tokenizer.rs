@@ -5,7 +5,7 @@ use crate::{
 };
 
 /// Converts file contents text into a stream of tokens
-pub(crate) struct Tokenizer<'a> {
+pub struct Tokenizer<'a> {
     /// Where in the file the tokenizer is currently working
     cursor: u32,
     /// The cursor of the begining of the current token that the tokenizer is working on
@@ -18,7 +18,7 @@ pub(crate) struct Tokenizer<'a> {
 
 impl<'a> Tokenizer<'a> {
     /// Create a new tokenizer, taking ownership of the file contents string
-    pub(crate) fn new(source_file: &'a SourceFile) -> Self {
+    pub fn new(source_file: &'a SourceFile) -> Self {
         Self {
             cursor: 0,
             source_file,
@@ -28,7 +28,7 @@ impl<'a> Tokenizer<'a> {
     }
 
     /// Convert the file contents string into a stream of tokens
-    pub(crate) fn tokenize(&mut self, tokens: &mut Vec<Token>) -> Result<(), KartaError> {
+    pub fn tokenize(&mut self, tokens: &mut Vec<Token>) -> Result<(), KartaError> {
         while let Some(char) = self.current_char() {
             match self.state {
                 TokenizerState::None => self.handle_none(char),
@@ -246,11 +246,11 @@ enum TokenizerState {
 
 #[derive(Copy, Clone, Debug)]
 /// Represents a single piece of text in the file
-pub(crate) struct Token {
+pub struct Token {
     /// What kind of token this is
-    pub(crate) kind: TokenKind,
+    pub kind: TokenKind,
     /// Where in the file this token came from
-    pub(crate) span: Span,
+    pub span: Span,
 }
 
 impl Token {

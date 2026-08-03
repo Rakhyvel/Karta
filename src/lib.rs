@@ -49,7 +49,8 @@
 //! - [ ] Add `where`
 //! - [ ] `$` for parens until end of line
 
-pub mod ast;
+pub mod analysis;
+mod ast;
 mod builtin;
 mod debug;
 mod elaborate;

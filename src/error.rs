@@ -1,4 +1,4 @@
-use std::num;
+use std::{fmt::Display, num};
 
 use crate::{interner::SymbolId, ir::Value, span::Span, tokenizer::TokenKind};
 
@@ -48,4 +48,11 @@ pub enum ErrorKind {
     },
     DivisionByZero,
     QuotedEof,
+}
+
+impl Display for KartaError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Debug stub for now
+        write!(f, "{:?}", self)
+    }
 }

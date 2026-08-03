@@ -1,0 +1,53 @@
+{
+    "name": "karta-vscode",
+    "displayName": "Karta",
+    "version": "26.07",
+    "engines": {
+        "vscode": "^1.75.0"ssss
+    },
+    "main": "./out/extension.ts",
+    "contributes": {
+        "languages": [
+            {
+                "id": "karta",
+                "aliases": [
+                    "Karta"
+                ],
+                "extensions": [
+                    ".k"
+                ],
+                "configuration": "./language-configuration.json"
+            }
+        ],
+        "configuration": {
+            "type": "object",
+            "title": "Karta",
+            "properties": {
+                "karta.server.path": {
+                    "type": "string",
+                    "default": ""
+                },
+                "karta.trace.server": {
+                    "type": "string",
+                    "enum": [
+                        "off",
+                        "messages",
+                        "verbose"
+                    ],
+                    "default": "off"
+                }
+            }
+        }
+    },
+    "scripts": {
+        "compile": "tsc -p ./"
+    },
+    "dependencies": {
+        "vscode-languageclient": "^9"
+    },
+    "devDependencies": {
+        "@types/vscode": "^1.75.0",
+        "@types/node": "^20",
+        "typescript": "^5"
+    }
+}
