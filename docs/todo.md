@@ -9,6 +9,7 @@
 - [ ] imports
 - [ ] eval-aware Value formatter
 - [ ] define all builtins
+- [ ] store an error list, pass that along
 - [ ] core.k
 - [ ] applicable algebra
     - [ ] union

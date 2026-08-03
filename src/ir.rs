@@ -189,6 +189,7 @@ impl<'a> Lowerer<'a> {
             Ast::Float(n) => self.lower_const(Value::Float(*n)),
             Ast::Atom(id) => self.lower_const(Value::Atom(*id)),
             Ast::BuiltinFunction(builtin) => self.lower_const(Value::Builtin(*builtin)),
+            Ast::Error => unreachable!("I only lower the finest of ASTs"),
 
             Ast::Map(pairs) => {
                 let pairs = pairs

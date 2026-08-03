@@ -112,6 +112,10 @@ impl AstHeap {
         self.insert(Ast::If(conds, else_), span)
     }
 
+    pub(crate) fn create_error(&mut self, span: Span) -> AstId {
+        self.insert(Ast::Error, span)
+    }
+
     /// Retrieves a reference to an Ast for a given ID, if it exists
     pub(crate) fn get(&self, ast_id: AstId) -> Option<&Ast> {
         self.asts.get(ast_id.as_u32() as usize)
@@ -181,4 +185,6 @@ pub(crate) enum Ast {
     File(Vec<AstId>),
 
     If(Vec<(AstId, AstId)>, AstId),
+
+    Error,
 }

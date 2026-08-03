@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use karta::{source::SourceFile, span::Span, tokenizer::TokenKind, KartaContext};
+use karta::{analysis::SemanticKind, source::SourceFile, span::Span, KartaContext};
 use lsp_server::{Connection, Message, ProtocolError, Response};
 use lsp_types::{
     Diagnostic, DiagnosticSeverity, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
@@ -65,14 +65,14 @@ pub fn main() -> Result<(), ProtocolError> {
                         let analysis = kctx.analyze(text);
 
                         let (mut prev_line, mut prev_start) = (0u32, 0u32);
-                        for tok in analysis.tokens.iter().filter(|t| is_visible(t.kind)) {
-                            let Some((token_type, modifiers)) = semantic_kind(tok.kind) else {
+                        for (span, kind) in analysis.tokens {
+                            let Some((token_type, modifiers)) = semantic_kind(kind) else {
                                 continue;
                             };
 
-                            let (line, start) = analysis.source.line_col_utf16(tok.span.start);
+                            let (line, start) = analysis.source.line_col_utf16(span.start);
                             let length =
-                                analysis.source.span_text(tok.span).encode_utf16().count() as u32;
+                                analysis.source.span_text(span).encode_utf16().count() as u32;
 
                             let delta_line = line - prev_line;
                             let delta_start = if delta_line == 0 {
@@ -213,14 +213,7 @@ fn span_to_range(src: &SourceFile, span: Span) -> Range {
     }
 }
 
-fn is_visible(kind: TokenKind) -> bool {
-    !matches!(
-        kind,
-        TokenKind::Dedent | TokenKind::EndOfFile | TokenKind::Indent | TokenKind::Newline
-    )
-}
-
-fn semantic_kind(kind: TokenKind) -> Option<(u32, u32)> {
+fn semantic_kind(kind: SemanticKind) -> Option<(u32, u32)> {
     const KEYWORD: u32 = 0;
     const NUMBER: u32 = 1;
     const STRING: u32 = 2;
@@ -232,20 +225,16 @@ fn semantic_kind(kind: TokenKind) -> Option<(u32, u32)> {
     const DEFAULT_LIBRARY: u32 = 1 << 0;
 
     Some(match kind {
-        TokenKind::Let
-        | TokenKind::In
-        | TokenKind::If
-        | TokenKind::Then
-        | TokenKind::Elif
-        | TokenKind::Else => (KEYWORD, 0),
+        SemanticKind::Keyword => (KEYWORD, 0),
 
-        TokenKind::Integer | TokenKind::Float => (NUMBER, 0),
-        TokenKind::String | TokenKind::Char => (STRING, 0),
-        TokenKind::Atom => (ATOM, 0),
-        TokenKind::Builtin => (FUNCTION, DEFAULT_LIBRARY),
-        TokenKind::Identifier => (VARIABLE, 0),
+        SemanticKind::Number => (NUMBER, 0),
+        SemanticKind::String => (STRING, 0),
+        SemanticKind::Atom => (ATOM, 0),
+        SemanticKind::Builtin => (FUNCTION, DEFAULT_LIBRARY),
+        SemanticKind::Function => (FUNCTION, 0),
+        SemanticKind::Variable => (VARIABLE, 0),
 
-        TokenKind::Arrow | TokenKind::Assign | TokenKind::Backslash => (OPERATOR, 0),
+        SemanticKind::Operator => (OPERATOR, 0),
 
         _ => return None,
     })

@@ -3,11 +3,10 @@ use crate::{
     builtin::Builtin,
     error::{ErrorKind, KartaError},
     interner::{AtomTable, StringLiteralTable, SymbolTable},
-    layout,
     pattern::{PatternHeap, PatternId},
     source::SourceFile,
     span::Span,
-    tokenizer::{Token, TokenKind, Tokenizer},
+    tokenizer::{Token, TokenKind},
 };
 
 /// Parses a stream of tokens into Asts
@@ -20,6 +19,7 @@ pub(crate) struct Parser<'a> {
     symbols: &'a mut SymbolTable,
     strings: &'a mut StringLiteralTable,
     atoms: &'a mut AtomTable,
+    errors: Vec<KartaError>,
 }
 
 impl<'a> Parser<'a> {
@@ -42,16 +42,20 @@ impl<'a> Parser<'a> {
             symbols,
             strings,
             atoms,
+            errors: vec![],
         }
     }
 
     /// Parses file contents into an AST
-    pub(crate) fn parse_file(&mut self) -> Result<AstId, KartaError> {
+    pub(crate) fn parse_file(mut self) -> (AstId, Vec<KartaError>) {
         self.accept_newlines();
 
-        let bindings = self.parse_bindings(TokenKind::EndOfFile)?;
+        let bindings = self.parse_bindings(TokenKind::EndOfFile);
 
-        Ok(self.asts.create_file(self.tokens[0].span, bindings))
+        (
+            self.asts.create_file(self.tokens[0].span, bindings),
+            self.errors,
+        )
     }
 
     pub(crate) fn parse_expr(&mut self) -> Result<AstId, KartaError> {
@@ -117,25 +121,51 @@ impl<'a> Parser<'a> {
         while self.accept(TokenKind::Newline).is_some() {}
     }
 
-    fn parse_bindings(&mut self, end_kind: TokenKind) -> Result<Vec<AstId>, KartaError> {
-        let mut retval = vec![];
-        while self.peek().kind != end_kind {
-            // Parse the name of this binding
-            let name_span = self.expect(TokenKind::Identifier)?.span;
-            let name_text = self.source.span_text(name_span);
-            let name = self.symbols.intern(name_text);
-
-            // Parse patterns into a list of args before the `=`
-            let params: Vec<PatternId> = self.parse_pattern_list()?;
-
-            // Parse the RHS after the `=`
-            let rhs_value = self.let_in_expr()?;
-            self.accept_newlines();
-
-            // Slap that bad boy in
-            retval.push(self.asts.create_binding(name_span, name, params, rhs_value));
+    fn sync(&mut self, end_kind: TokenKind) {
+        while !self.eos()
+            && self.peek().kind != end_kind
+            && self.peek().kind != TokenKind::Newline
+            && self.peek().kind != TokenKind::Dedent
+        {
+            self.pop();
         }
-        Ok(retval)
+    }
+
+    fn parse_bindings(&mut self, end_kind: TokenKind) -> Vec<AstId> {
+        let mut retval = vec![];
+        while !self.eos() && self.peek().kind != end_kind {
+            let before = self.cursor;
+
+            match self.parse_binding() {
+                Ok(binding) => retval.push(binding),
+                Err(err) => {
+                    self.errors.push(err);
+                    if self.cursor == before {
+                        self.pop();
+                    }
+                    self.sync(end_kind)
+                }
+            }
+            self.accept_newlines();
+        }
+        retval
+    }
+
+    fn parse_binding(&mut self) -> Result<AstId, KartaError> {
+        // Parse the name of this binding
+        let name_span = self.expect(TokenKind::Identifier)?.span;
+        let name_text = self.source.span_text(name_span);
+        let name = self.symbols.intern(name_text);
+
+        // Parse patterns into a list of args before the `=`
+        let params: Vec<PatternId> = self.parse_pattern_list()?;
+
+        // Parse the RHS after the `=`
+        let rhs_value = self.let_in_expr()?;
+        self.accept_newlines();
+
+        // Create the binding
+        Ok(self.asts.create_binding(name_span, name, params, rhs_value))
     }
 
     /// Parses binding params in between the binding name and its `=` sign
@@ -172,12 +202,12 @@ impl<'a> Parser<'a> {
                 if self.peek().kind == TokenKind::Indent {
                     self.expect(TokenKind::Indent)?;
                     self.accept_newlines();
-                    bindings = self.parse_bindings(TokenKind::Dedent)?;
+                    bindings = self.parse_bindings(TokenKind::Dedent);
                     self.accept_newlines();
                     self.expect(TokenKind::Dedent)?;
                     self.accept_newlines();
                 } else {
-                    bindings = self.parse_bindings(TokenKind::In)?;
+                    bindings = self.parse_bindings(TokenKind::In);
                 }
                 self.expect(TokenKind::In)?;
                 let expr = self.let_in_expr()?;
@@ -331,9 +361,12 @@ impl<'a> Parser<'a> {
         self.expect(TokenKind::Then)?;
         let then = self.let_in_expr()?;
         conds.push((condition, then));
+        self.accept_newlines();
         while self.accept(TokenKind::Elif).is_some() {
             let condition = self.let_in_expr()?;
+            self.accept_newlines();
             self.expect(TokenKind::Then)?;
+            self.accept_newlines();
             let then = self.let_in_expr()?;
             conds.push((condition, then));
         }
@@ -392,7 +425,7 @@ impl<'a> Parser<'a> {
                 break;
             }
         }
-        self.expect(TokenKind::RightBrace)?;
+        self.expect(TokenKind::RightSquare)?;
         Ok(self.asts.make_list(token.span, children))
     }
 

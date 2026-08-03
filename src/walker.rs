@@ -38,13 +38,14 @@ where
         patterns: &'a PatternHeap,
         root: AstId,
         visitor: V,
-    ) -> Result<(), V::Error> {
-        Self {
+    ) -> Result<V, V::Error> {
+        let mut walker = Self {
             asts,
             patterns,
             visitor,
-        }
-        .walk_ast(root)
+        };
+        walker.walk_ast(root)?;
+        Ok(walker.visitor)
     }
 
     fn walk_ast(&mut self, id: AstId) -> Result<(), V::Error> {
@@ -59,7 +60,8 @@ where
             | Ast::BuiltinFunction(_)
             | Ast::Char(_)
             | Ast::Atom(_)
-            | Ast::String(_) => {}
+            | Ast::String(_)
+            | Ast::Error => {}
 
             Ast::File(bindings) => {
                 for binding in bindings {

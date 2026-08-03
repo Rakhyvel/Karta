@@ -5,7 +5,7 @@ use crate::{
     error::{ErrorKind, KartaError},
     interner::SymbolTable,
     pattern::{Pattern, PatternHeap, PatternId},
-    scope::{DefArena, DefId, DefKind, ScopeArena, ScopeId},
+    scope::{DefArena, DefId, DefKind, Definition, ScopeArena, ScopeId},
     walker::AstVisitor,
 };
 
@@ -48,6 +48,22 @@ impl Elaboration {
 
     pub fn refer(&self, ast: AstId) -> DefId {
         *self.references.get(&ast).unwrap()
+    }
+
+    pub fn defines(&self) -> &HashMap<AstId, DefId> {
+        &self.defines
+    }
+
+    pub fn pattern_defines(&self) -> &HashMap<PatternId, DefId> {
+        &self.pattern_defines
+    }
+
+    pub fn references(&self) -> &HashMap<AstId, DefId> {
+        &self.references
+    }
+
+    pub fn def(&self, def: DefId) -> &Definition {
+        self.defs.get(def)
     }
 }
 
@@ -147,6 +163,7 @@ pub struct Resolve<'a> {
     asts: &'a AstHeap,
     symbols: &'a SymbolTable,
     elab: &'a mut Elaboration,
+    pub errors: Vec<KartaError>,
 }
 
 impl<'a> Resolve<'a> {
@@ -155,6 +172,7 @@ impl<'a> Resolve<'a> {
             asts,
             symbols,
             elab,
+            errors: vec![],
         }
     }
 }
@@ -171,17 +189,18 @@ impl<'a> AstVisitor for Resolve<'a> {
                 .ast_scopes
                 .get(&id)
                 .expect("should've been scoped during Declare");
-            let def_id = self
-                .elab
-                .scopes
-                .lookup_ident(*sym, ast_scope_id)
-                .ok_or(KartaError {
+
+            match self.elab.scopes.lookup_ident(*sym, ast_scope_id) {
+                Some(def_id) => {
+                    self.elab.references.insert(id, def_id);
+                }
+                None => self.errors.push(KartaError {
                     span: self.asts.span(id),
                     kind: ErrorKind::UnresolvedIdentifier {
                         symbol_name: String::from(self.symbols.get(*sym)),
                     },
-                })?;
-            self.elab.references.insert(id, def_id);
+                }),
+            };
         }
 
         Ok(())

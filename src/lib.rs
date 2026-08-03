@@ -98,7 +98,7 @@ impl KartaContext {
         tokenizer.tokenize(&mut old_tokens)?;
         let tokens = layout::layout(&old_tokens);
 
-        let mut parser = Parser::new(
+        let parser = Parser::new(
             &source,
             &tokens,
             &mut self.ast_heap,
@@ -108,7 +108,7 @@ impl KartaContext {
             &mut self.atom_table,
         );
 
-        let _file_ast = parser.parse_file()?;
+        let _file_ast = parser.parse_file();
 
         todo!("emplace into the context with a ModuleId")
     }
@@ -140,12 +140,15 @@ impl KartaContext {
             Declare::new(&self.ast_heap, &self.pattern_heap, &mut self.elab),
         )?;
 
-        AstWalker::walk(
+        let resolve = AstWalker::walk(
             &self.ast_heap,
             &self.pattern_heap,
             expr_ast,
             Resolve::new(&self.ast_heap, &self.symbol_table, &mut self.elab),
         )?;
+        if !resolve.errors.is_empty() {
+            return Err(resolve.errors[0].clone());
+        }
 
         let program = Lowerer::new(&self.ast_heap, &self.elab).lower(expr_ast);
 
