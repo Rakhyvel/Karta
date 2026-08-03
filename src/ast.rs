@@ -79,8 +79,8 @@ impl AstHeap {
         self.insert(Ast::Tuple(terms), span)
     }
 
-    pub(crate) fn create_file(&mut self, span: Span) -> AstId {
-        self.insert(Ast::File(), span)
+    pub(crate) fn create_file(&mut self, span: Span, bindings: Vec<AstId>) -> AstId {
+        self.insert(Ast::File(bindings), span)
     }
 
     pub(crate) fn create_let(&mut self, span: Span, fields: Vec<AstId>, in_expr: AstId) -> AstId {
@@ -177,8 +177,8 @@ pub(crate) enum Ast {
         arg: PatternId,
         body: AstId,
     },
-    /// Just a scope for the file
-    File(),
+    /// Stores all the bindings in a file
+    File(Vec<AstId>),
 
     If(Vec<(AstId, AstId)>, AstId),
 }

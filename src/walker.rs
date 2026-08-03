@@ -59,8 +59,13 @@ where
             | Ast::BuiltinFunction(_)
             | Ast::Char(_)
             | Ast::Atom(_)
-            | Ast::String(_)
-            | Ast::File() => {}
+            | Ast::String(_) => {}
+
+            Ast::File(bindings) => {
+                for binding in bindings {
+                    self.walk_ast(*binding)?;
+                }
+            }
 
             Ast::Binding { params, rhs, .. } => {
                 for param in params {

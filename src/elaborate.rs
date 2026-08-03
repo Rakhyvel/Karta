@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::{
     ast::{Ast, AstHeap, AstId},
     error::{ErrorKind, KartaError},
+    interner::SymbolTable,
     pattern::{Pattern, PatternHeap, PatternId},
     scope::{DefArena, DefId, DefKind, ScopeArena, ScopeId},
     walker::AstVisitor,
@@ -144,12 +145,17 @@ impl<'a> AstVisitor for Declare<'a> {
 
 pub struct Resolve<'a> {
     asts: &'a AstHeap,
+    symbols: &'a SymbolTable,
     elab: &'a mut Elaboration,
 }
 
 impl<'a> Resolve<'a> {
-    pub fn new(asts: &'a AstHeap, elab: &'a mut Elaboration) -> Self {
-        Self { asts, elab }
+    pub fn new(asts: &'a AstHeap, symbols: &'a SymbolTable, elab: &'a mut Elaboration) -> Self {
+        Self {
+            asts,
+            symbols,
+            elab,
+        }
     }
 }
 
@@ -171,7 +177,9 @@ impl<'a> AstVisitor for Resolve<'a> {
                 .lookup_ident(*sym, ast_scope_id)
                 .ok_or(KartaError {
                     span: self.asts.span(id),
-                    kind: ErrorKind::UnresolvedIdentifier { sym: *sym },
+                    kind: ErrorKind::UnresolvedIdentifier {
+                        symbol_name: String::from(self.symbols.get(*sym)),
+                    },
                 })?;
             self.elab.references.insert(id, def_id);
         }

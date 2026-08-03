@@ -108,9 +108,9 @@ impl Heap {
             HeapObj::Map(pairs) => Ok(pairs),
             HeapObj::Closure(..) => Err(KartaError {
                 span: Span { start: 67, end: 67 },
-                kind: ErrorKind::UnexpectedGot {
-                    expected: "map",
-                    got: "closure",
+                kind: ErrorKind::Unexpected {
+                    expected: String::from("map"),
+                    got: String::from("closure"),
                 },
             }),
         }
@@ -231,10 +231,10 @@ impl Eval {
                     span: Span { start: 67, end: 67 },
                     kind: ErrorKind::CannotBinop {
                         verb: "apply",
-                        lhs,
-                        rhs,
+                        lhs: format!("{lhs:?}"), // TODO: An eval-aware value renderer
+                        rhs: format!("{rhs:?}"), // TODO: An eval-aware value renderer
                     },
-                })
+                });
             }
         }
         Ok(())
@@ -295,8 +295,8 @@ impl Eval {
                 span: Span { start: 67, end: 67 },
                 kind: ErrorKind::CannotBinop {
                     verb: "compare",
-                    lhs,
-                    rhs,
+                    lhs: format!("{lhs:?}"), // TODO: An eval-aware value renderer
+                    rhs: format!("{rhs:?}"), // TODO: An eval-aware value renderer
                 },
             }),
         }
@@ -320,7 +320,11 @@ impl Eval {
 
             _ => Err(KartaError {
                 span: Span { start: 67, end: 67 },
-                kind: ErrorKind::CannotBinop { verb, lhs, rhs },
+                kind: ErrorKind::CannotBinop {
+                    verb,
+                    lhs: format!("{lhs:?}"), // TODO: An eval-aware value renderer
+                    rhs: format!("{rhs:?}"), // TODO: An eval-aware value renderer
+                },
             }),
         }
     }
@@ -329,9 +333,9 @@ impl Eval {
         let Value::Map(addr) = value else {
             return Err(KartaError {
                 span: Span { start: 67, end: 67 },
-                kind: ErrorKind::UnexpectedValue {
-                    expected: "tuple",
-                    value,
+                kind: ErrorKind::Unexpected {
+                    expected: String::from("tuple"),
+                    got: format!("{value:?}"), // TODO: An eval-aware value renderer
                 },
             });
         };

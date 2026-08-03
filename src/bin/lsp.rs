@@ -1,9 +1,9 @@
 use karta::{source::SourceFile, span::Span, KartaContext};
 use lsp_server::{Connection, Message, ProtocolError};
 use lsp_types::{
-    notification::DidChangeTextDocument, Diagnostic, DiagnosticSeverity,
-    DidChangeTextDocumentParams, DidOpenTextDocumentParams, Position, PublishDiagnosticsParams,
-    Range, ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind, Url,
+    Diagnostic, DiagnosticSeverity, DidChangeTextDocumentParams, DidOpenTextDocumentParams,
+    Position, PublishDiagnosticsParams, Range, ServerCapabilities, TextDocumentSyncCapability,
+    TextDocumentSyncKind, Url,
 };
 
 pub fn main() -> Result<(), ProtocolError> {
@@ -83,7 +83,7 @@ fn publish_diagnostics(connection: &Connection, uri: Url, _version: i32, text: S
                 range: span_to_range(&analysis.source, err.span),
                 severity: Some(DiagnosticSeverity::ERROR),
                 source: Some("karta".to_string()),
-                message: format!("{:?}", err.kind), // TODO: kctx.render(err.kind)
+                message: format!("{}", err.kind),
                 ..Default::default()
             })
             .collect(),

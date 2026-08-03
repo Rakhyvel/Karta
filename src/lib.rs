@@ -182,7 +182,7 @@ impl KartaContext {
             &self.ast_heap,
             &self.pattern_heap,
             expr_ast,
-            Resolve::new(&self.ast_heap, &mut self.elab),
+            Resolve::new(&self.ast_heap, &self.symbol_table, &mut self.elab),
         )?;
 
         let program = Lowerer::new(&self.ast_heap, &self.elab).lower(expr_ast);

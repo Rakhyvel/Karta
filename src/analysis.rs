@@ -28,7 +28,8 @@ impl KartaContext {
             &mut self.string_literal_table,
             &mut self.atom_table,
         );
-        let expr_ast = match parser.parse_expr() {
+
+        let expr_ast = match parser.parse_file() {
             Ok(ok) => ok,
             Err(err) => {
                 diagnostics.push(err);
@@ -61,7 +62,7 @@ impl KartaContext {
             &self.ast_heap,
             &self.pattern_heap,
             expr_ast,
-            Resolve::new(&self.ast_heap, &mut self.elab),
+            Resolve::new(&self.ast_heap, &self.symbol_table, &mut self.elab),
         ) {
             Ok(_) => {}
             Err(err) => {

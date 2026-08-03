@@ -74,9 +74,10 @@ impl Value {
             Value::Char(x) => Ok(T::from(*x as i64)),
             _ => Err(KartaError {
                 span: Span { start: 67, end: 67 },
-                kind: ErrorKind::CannotConvert {
-                    value: *self,
-                    into: "int",
+                kind: ErrorKind::CannotBinop {
+                    verb: "convert between",
+                    lhs: format!("{:?}", *self),
+                    rhs: String::from("int"),
                 },
             }),
         }
@@ -92,9 +93,10 @@ impl Value {
             Value::Float(x) => Ok(T::from(*x)),
             _ => Err(KartaError {
                 span: Span { start: 67, end: 67 },
-                kind: ErrorKind::CannotConvert {
-                    value: *self,
-                    into: "float",
+                kind: ErrorKind::CannotBinop {
+                    verb: "convert between",
+                    lhs: format!("{:?}", *self),
+                    rhs: String::from("float"),
                 },
             }),
         }

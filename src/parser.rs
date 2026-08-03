@@ -50,9 +50,9 @@ impl<'a> Parser<'a> {
 
         self.accept_newlines();
 
-        self.parse_bindings(TokenKind::EndOfFile)?;
+        let bindings = self.parse_bindings(TokenKind::EndOfFile)?;
 
-        Ok(self.asts.create_file(self.tokens[0].span))
+        Ok(self.asts.create_file(self.tokens[0].span, bindings))
     }
 
     pub(crate) fn parse_expr(&mut self) -> Result<AstId, KartaError> {
@@ -117,9 +117,9 @@ impl<'a> Parser<'a> {
         let peeked = self.peek();
         self.accept(kind).ok_or(KartaError {
             span: peeked.span,
-            kind: ErrorKind::UnexpectedToken2 {
-                expected_kind: kind,
-                got_kind: peeked.kind,
+            kind: ErrorKind::Unexpected {
+                expected: format!("{kind:?}"),
+                got: format!("{:?}", peeked.kind),
             },
         })
     }
@@ -239,9 +239,9 @@ impl<'a> Parser<'a> {
             TokenKind::Indent => self.parse_indent(),
             _ => Err(KartaError {
                 span: self.peek().span,
-                kind: ErrorKind::UnexpectedToken {
-                    expected: "an expression",
-                    token_kind: self.peek().kind,
+                kind: ErrorKind::Unexpected {
+                    expected: String::from("an expression"),
+                    got: format!("{:?}", self.peek().kind),
                 },
             }),
         }
@@ -252,9 +252,9 @@ impl<'a> Parser<'a> {
             TokenKind::Identifier => self.parse_pattern_identifier(),
             _ => Err(KartaError {
                 span: self.peek().span,
-                kind: ErrorKind::UnexpectedToken {
-                    expected: "an pattern",
-                    token_kind: self.peek().kind,
+                kind: ErrorKind::Unexpected {
+                    expected: String::from("a pattern"),
+                    got: format!("{:?}", self.peek().kind),
                 },
             }),
         }

@@ -261,6 +261,7 @@ impl Token {
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 /// Represents the various kinds a token can be
+/// TODO: impl Display
 pub enum TokenKind {
     Newline,
     LeftBrace,
