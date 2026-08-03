@@ -44,6 +44,19 @@
                 "scopeName": "source.karta",
                 "path": "./syntaxes/karta.tmLanguage.json"
             }
+        ],
+        "semanticTokenScopes": [
+            {
+                "language": "karta",
+                "scopes": {
+                    "variable.readonly": [
+                        "variable.other.constant.karta"
+                    ],
+                    "enumMember": [
+                        "constant.language.atom.karta"
+                    ]
+                }
+            }
         ]
     },
     "scripts": {

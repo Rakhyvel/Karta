@@ -5,7 +5,7 @@ use crate::{
     error::KartaError,
     layout,
     parser::Parser,
-    scope::Definition,
+    scope::{DefKind, Definition},
     source::SourceFile,
     span::Span,
     tokenizer::{TokenKind, Tokenizer},
@@ -27,7 +27,9 @@ pub enum SemanticKind {
     Atom,
     Builtin,
     Function,
-    Variable,
+    Variable, // catch-all for unresolvable identifiers
+    Parameter,
+    Constant,
     Operator,
     Other,
 }
@@ -155,9 +157,9 @@ fn semantic_kind(kind: TokenKind) -> SemanticKind {
 }
 
 fn kind_of(definition: &Definition) -> SemanticKind {
-    if definition.arity() == 0 {
-        SemanticKind::Variable
-    } else {
-        SemanticKind::Function
+    match definition.kind() {
+        DefKind::Parameter => SemanticKind::Parameter,
+        DefKind::Function if definition.arity() > 0 => SemanticKind::Function,
+        DefKind::Function => SemanticKind::Constant,
     }
 }

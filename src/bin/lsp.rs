@@ -26,10 +26,14 @@ pub fn main() -> Result<(), ProtocolError> {
                         SemanticTokenType::STRING,
                         SemanticTokenType::ENUM_MEMBER,
                         SemanticTokenType::FUNCTION,
+                        SemanticTokenType::PARAMETER,
                         SemanticTokenType::VARIABLE,
                         SemanticTokenType::OPERATOR,
                     ],
-                    token_modifiers: vec![SemanticTokenModifier::DEFAULT_LIBRARY],
+                    token_modifiers: vec![
+                        SemanticTokenModifier::DEFAULT_LIBRARY,
+                        SemanticTokenModifier::READONLY,
+                    ],
                 },
                 full: Some(SemanticTokensFullOptions::Bool(true)),
                 ..Default::default()
@@ -219,10 +223,12 @@ fn semantic_kind(kind: SemanticKind) -> Option<(u32, u32)> {
     const STRING: u32 = 2;
     const ATOM: u32 = 3;
     const FUNCTION: u32 = 4;
-    const VARIABLE: u32 = 5;
-    const OPERATOR: u32 = 6;
+    const PARAMETER: u32 = 5;
+    const VARIABLE: u32 = 6;
+    const OPERATOR: u32 = 7;
 
     const DEFAULT_LIBRARY: u32 = 1 << 0;
+    const READONLY: u32 = 1 << 1;
 
     Some(match kind {
         SemanticKind::Keyword => (KEYWORD, 0),
@@ -232,6 +238,8 @@ fn semantic_kind(kind: SemanticKind) -> Option<(u32, u32)> {
         SemanticKind::Atom => (ATOM, 0),
         SemanticKind::Builtin => (FUNCTION, DEFAULT_LIBRARY),
         SemanticKind::Function => (FUNCTION, 0),
+        SemanticKind::Parameter => (PARAMETER, 0),
+        SemanticKind::Constant => (VARIABLE, READONLY),
         SemanticKind::Variable => (VARIABLE, 0),
 
         SemanticKind::Operator => (OPERATOR, 0),

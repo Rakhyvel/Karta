@@ -140,4 +140,8 @@ impl Definition {
     pub fn arity(&self) -> u32 {
         self.arity
     }
+
+    pub fn kind(&self) -> &DefKind {
+        &self.kind
+    }
 }
