@@ -1,11 +1,11 @@
 {
     "name": "karta-vscode",
     "displayName": "Karta",
-    "version": "26.07",
+    "version": "0.0.1",
     "engines": {
-        "vscode": "^1.75.0"ssss
+        "vscode": "^1.75.0"
     },
-    "main": "./out/extension.ts",
+    "main": "./out/extension.js",
     "contributes": {
         "languages": [
             {

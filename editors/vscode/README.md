@@ -1,0 +1,1 @@
+To build: `npx tsc -p ./`

@@ -1,7 +1,5 @@
 use lsp_server::{Connection, Message, ProtocolError};
-use lsp_types::{
-    PositionEncodingKind, ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind,
-};
+use lsp_types::{ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind};
 
 pub fn main() -> Result<(), ProtocolError> {
     eprintln!("Karta LSP awaiting connection...");
@@ -10,7 +8,6 @@ pub fn main() -> Result<(), ProtocolError> {
     eprintln!("Constructing capabilities...");
     let capabilities = serde_json::to_value(ServerCapabilities {
         text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
-        position_encoding: Some(PositionEncodingKind::UTF8),
         ..Default::default()
     })
     .unwrap();
