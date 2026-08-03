@@ -1,17 +1,78 @@
-use crate::{error::KartaError, span::Span, tokenizer::TokenKind};
+use crate::{
+    elaborate::{Declare, Resolve},
+    error::KartaError,
+    parser::Parser,
+    source::SourceFile,
+    span::Span,
+    tokenizer::TokenKind,
+    walker::AstWalker,
+    KartaContext,
+};
 
 pub struct Analysis {
-    pub tokens: Vec<(Span, TokenKind)>,
+    pub source: SourceFile,
     pub diagnostics: Vec<KartaError>,
-    pub semantic: Vec<(Span, SemanticKind)>, // TODO: Get from elaboration, after parsing succeeds
+    pub tokens: Vec<(Span, TokenKind)>,
 }
 
-pub enum SemanticKind {
-    RegularAssToken(TokenKind), // TODO: Will need more...
-}
+impl KartaContext {
+    pub fn analyze(&mut self, text: impl ToString) -> Analysis {
+        let mut diagnostics = vec![];
+        let source = SourceFile::new(text.to_string());
 
-impl Analysis {
-    pub fn analyze(text: &str) -> Analysis {
-        todo!()
+        let mut parser = Parser::new(
+            &source,
+            &mut self.ast_heap,
+            &mut self.pattern_heap,
+            &mut self.symbol_table,
+            &mut self.string_literal_table,
+            &mut self.atom_table,
+        );
+        let expr_ast = match parser.parse_expr() {
+            Ok(ok) => ok,
+            Err(err) => {
+                diagnostics.push(err);
+                return Analysis {
+                    source,
+                    diagnostics,
+                    tokens: vec![],
+                };
+            }
+        };
+
+        match AstWalker::walk(
+            &self.ast_heap,
+            &self.pattern_heap,
+            expr_ast,
+            Declare::new(&self.ast_heap, &self.pattern_heap, &mut self.elab),
+        ) {
+            Ok(_) => {}
+            Err(err) => {
+                diagnostics.push(err);
+                return Analysis {
+                    source,
+                    diagnostics,
+                    tokens: vec![],
+                };
+            }
+        }
+
+        match AstWalker::walk(
+            &self.ast_heap,
+            &self.pattern_heap,
+            expr_ast,
+            Resolve::new(&self.ast_heap, &mut self.elab),
+        ) {
+            Ok(_) => {}
+            Err(err) => {
+                diagnostics.push(err);
+            }
+        }
+
+        Analysis {
+            source,
+            diagnostics,
+            tokens: vec![],
+        }
     }
 }

@@ -62,15 +62,12 @@ mod layout;
 mod parser;
 mod pattern;
 mod scope;
-mod source;
-mod span;
+pub mod source;
+pub mod span;
 mod tokenizer;
 mod walker;
 
-use std::{
-    fs,
-    sync::{Arc, Mutex},
-};
+use std::fs;
 
 use ast::AstHeap;
 use parser::Parser;
@@ -90,29 +87,29 @@ use crate::{
 /// Represents the context for evaluating Karta files and expressions
 pub struct KartaContext {
     /// Heap of all Asts, can be accessed with an AstId
-    ast_heap: Arc<Mutex<AstHeap>>,
+    ast_heap: AstHeap,
     /// Heap of pattern ASTs
-    pattern_heap: Arc<Mutex<PatternHeap>>,
+    pattern_heap: PatternHeap,
     /// Maps atom string representations to their atom id
-    atom_table: Arc<Mutex<AtomTable>>,
+    atom_table: AtomTable,
     /// Table of interned symbol names
-    symbol_table: Arc<Mutex<SymbolTable>>,
+    symbol_table: SymbolTable,
     /// Table of interned string literals
-    string_literal_table: Arc<Mutex<StringLiteralTable>>,
+    string_literal_table: StringLiteralTable,
     /// Table of scope and def relationships
-    elab: Arc<Mutex<Elaboration>>,
+    elab: Elaboration,
 }
 
 impl KartaContext {
     /// Creates a new Karta Context, or a string is any errors occured
     pub fn new() -> Self {
         Self {
-            ast_heap: Arc::new(Mutex::new(AstHeap::new())),
-            atom_table: Arc::new(Mutex::new(AtomTable::with_wellknown())),
-            pattern_heap: Arc::new(Mutex::new(PatternHeap::new())),
-            symbol_table: Arc::new(Mutex::new(SymbolTable::new())),
-            string_literal_table: Arc::new(Mutex::new(StringLiteralTable::new())),
-            elab: Arc::new(Mutex::new(Elaboration::new())),
+            ast_heap: AstHeap::new(),
+            atom_table: AtomTable::with_wellknown(),
+            pattern_heap: PatternHeap::new(),
+            symbol_table: SymbolTable::new(),
+            string_literal_table: StringLiteralTable::new(),
+            elab: Elaboration::new(),
             // modules: HashMap::new(),
         }
     }
@@ -146,19 +143,13 @@ impl KartaContext {
     ) -> Result<(), KartaError> {
         let source = SourceFile::new(file_contents.to_string());
 
-        let mut pattern_heap = self.pattern_heap.try_lock().unwrap();
-        let mut string_literal_table = self.string_literal_table.try_lock().unwrap();
-        let mut ast_heap = self.ast_heap.try_lock().unwrap();
-        let mut atoms_table = self.atom_table.try_lock().unwrap();
-        let mut symbol_table = self.symbol_table.try_lock().unwrap();
-
         let mut parser = Parser::new(
             &source,
-            &mut ast_heap,
-            &mut pattern_heap,
-            &mut symbol_table,
-            &mut string_literal_table,
-            &mut atoms_table,
+            &mut self.ast_heap,
+            &mut self.pattern_heap,
+            &mut self.symbol_table,
+            &mut self.string_literal_table,
+            &mut self.atom_table,
         );
 
         let _file_ast = parser.parse_file()?;
@@ -167,40 +158,34 @@ impl KartaContext {
     }
 
     /// Constructs a new query from an expression, to be evaluated within the context constructed so far
-    pub fn eval(&self, expr_str: impl ToString) -> Result<Value, KartaError> {
+    pub fn eval(&mut self, expr_str: impl ToString) -> Result<Value, KartaError> {
         let source = SourceFile::new(expr_str.to_string());
-        let mut pattern_heap = self.pattern_heap.try_lock().unwrap();
-        let mut string_literal_table = self.string_literal_table.try_lock().unwrap();
-        let mut ast_heap = self.ast_heap.try_lock().unwrap();
-        let mut atoms_table = self.atom_table.try_lock().unwrap();
-        let mut symbol_table = self.symbol_table.try_lock().unwrap();
-        let mut elab = self.elab.try_lock().unwrap();
 
         let mut parser = Parser::new(
             &source,
-            &mut ast_heap,
-            &mut pattern_heap,
-            &mut symbol_table,
-            &mut string_literal_table,
-            &mut atoms_table,
+            &mut self.ast_heap,
+            &mut self.pattern_heap,
+            &mut self.symbol_table,
+            &mut self.string_literal_table,
+            &mut self.atom_table,
         );
         let expr_ast = parser.parse_expr()?;
 
         AstWalker::walk(
-            &ast_heap,
-            &pattern_heap,
+            &self.ast_heap,
+            &self.pattern_heap,
             expr_ast,
-            Declare::new(&ast_heap, &pattern_heap, &mut elab),
+            Declare::new(&self.ast_heap, &self.pattern_heap, &mut self.elab),
         )?;
 
         AstWalker::walk(
-            &ast_heap,
-            &pattern_heap,
+            &self.ast_heap,
+            &self.pattern_heap,
             expr_ast,
-            Resolve::new(&ast_heap, &mut elab),
+            Resolve::new(&self.ast_heap, &mut self.elab),
         )?;
 
-        let program = Lowerer::new(&ast_heap, &elab).lower(expr_ast);
+        let program = Lowerer::new(&self.ast_heap, &self.elab).lower(expr_ast);
 
         Eval::new(program).eval()
     }
@@ -218,7 +203,7 @@ mod tests {
 
     #[test]
     fn basic_variable() -> Result<(), KartaError> {
-        let karta_context = KartaContext::new();
+        let mut karta_context = KartaContext::new();
 
         let res: i64 = karta_context.eval("let x = 100 in x")?.as_int()?;
 
@@ -228,7 +213,7 @@ mod tests {
 
     #[test]
     fn basic_variable_float() -> Result<(), KartaError> {
-        let karta_context = KartaContext::new();
+        let mut karta_context = KartaContext::new();
 
         let res: f64 = karta_context.eval("let x = 100.0 in x")?.as_float()?;
 
@@ -238,7 +223,7 @@ mod tests {
 
     #[test]
     fn let_in_let_in() -> Result<(), KartaError> {
-        let karta_context = KartaContext::new();
+        let mut karta_context = KartaContext::new();
 
         let res: f64 = karta_context
             .eval("let x = 100.0 in let y = 200.0 in @add(x, y)")?
@@ -250,7 +235,7 @@ mod tests {
 
     #[test]
     fn empty_map() -> Result<(), KartaError> {
-        let karta_context = KartaContext::new();
+        let mut karta_context = KartaContext::new();
 
         let res: f64 = karta_context
             .eval("if {} then 100.0 else 300.0")?
@@ -262,7 +247,7 @@ mod tests {
 
     #[test]
     fn get_map_int() -> Result<(), KartaError> {
-        let karta_context = KartaContext::new();
+        let mut karta_context = KartaContext::new();
 
         let res: i64 = karta_context
             .eval("let test = {.test-atom = 4} in test.test-atom")?
@@ -274,7 +259,7 @@ mod tests {
 
     #[test]
     fn get_map_floats() -> Result<(), KartaError> {
-        let karta_context = KartaContext::new();
+        let mut karta_context = KartaContext::new();
 
         let res: f64 = karta_context
             .eval("let test = {.test-atom = 4.5} in test.test-atom")?
@@ -286,7 +271,7 @@ mod tests {
 
     #[test]
     fn map_trailing_comma() -> Result<(), KartaError> {
-        let karta_context = KartaContext::new();
+        let mut karta_context = KartaContext::new();
 
         let res: f64 = karta_context
             .eval("let test = {.test-atom = 4.5, .test-atom-2 = 5.4,} in test.test-atom-2")?
@@ -298,9 +283,9 @@ mod tests {
 
     #[test]
     fn integer_map_keys() -> Result<(), KartaError> {
-        let kctx = KartaContext::new();
+        let mut karta_context = KartaContext::new();
 
-        let res: i64 = kctx.eval("{0 = 23} 0")?.as_int()?;
+        let res: i64 = karta_context.eval("{0 = 23} 0")?.as_int()?;
 
         assert_eq!(res, 23);
         Ok(())
@@ -308,7 +293,7 @@ mod tests {
 
     #[test]
     fn map_multiple_lines() -> Result<(), KartaError> {
-        let karta_context = KartaContext::new();
+        let mut karta_context = KartaContext::new();
 
         let res: i64 = karta_context
             .eval(
@@ -326,7 +311,7 @@ in p .b
 
     #[test]
     fn builtin_functions_operators() -> Result<(), KartaError> {
-        let karta_context = KartaContext::new();
+        let mut karta_context = KartaContext::new();
 
         let res: i64 = karta_context.eval("@add (19, 4)")?.as_int()?;
 
@@ -336,7 +321,7 @@ in p .b
 
     #[test]
     fn let_in_multiple_lines() -> Result<(), KartaError> {
-        let karta_context = KartaContext::new();
+        let mut karta_context = KartaContext::new();
 
         let res: i64 = karta_context
             .eval(
@@ -354,7 +339,7 @@ in (@add (x, y))
 
     #[test]
     fn let_in_multiple_newlines() -> Result<(), KartaError> {
-        let karta_context = KartaContext::new();
+        let mut karta_context = KartaContext::new();
 
         let res: i64 = karta_context
             .eval(
@@ -374,7 +359,7 @@ in (@add (x, y))
 
     #[test]
     fn let_in_preceding_comment() -> Result<(), KartaError> {
-        let karta_context = KartaContext::new();
+        let mut karta_context = KartaContext::new();
 
         let res: i64 = karta_context
             .eval(
@@ -393,7 +378,7 @@ in (@add (x, y))
 
     #[test]
     fn let_in_own_line() -> Result<(), KartaError> {
-        let karta_context = KartaContext::new();
+        let mut karta_context = KartaContext::new();
 
         let res: i64 = karta_context
             .eval(
@@ -412,9 +397,9 @@ in
 
     #[test]
     fn tuples() -> Result<(), KartaError> {
-        let kctx = KartaContext::new();
+        let mut karta_context = KartaContext::new();
 
-        let res: i64 = kctx.eval("(1, 2, 3, 4) 2")?.as_int()?;
+        let res: i64 = karta_context.eval("(1, 2, 3, 4) 2")?.as_int()?;
 
         assert_eq!(res, 3);
         Ok(())
@@ -422,9 +407,9 @@ in
 
     #[test]
     fn lambdas() -> Result<(), KartaError> {
-        let kctx = KartaContext::new();
+        let mut karta_context = KartaContext::new();
 
-        let res: i64 = kctx.eval("(\\x -> @add(x, 4)) 5")?.as_int()?;
+        let res: i64 = karta_context.eval("(\\x -> @add(x, 4)) 5")?.as_int()?;
 
         assert_eq!(res, 9);
         Ok(())
@@ -432,9 +417,9 @@ in
 
     #[test]
     fn curry() -> Result<(), KartaError> {
-        let kctx = KartaContext::new();
+        let mut karta_context = KartaContext::new();
 
-        let res: i64 = kctx
+        let res: i64 = karta_context
             .eval("let + = \\x -> \\y -> @add (x, y) in (+ 5 4)")?
             .as_int()?;
 
@@ -444,9 +429,9 @@ in
 
     #[test]
     fn function_def_1_arg() -> Result<(), KartaError> {
-        let kctx = KartaContext::new();
+        let mut karta_context = KartaContext::new();
 
-        let res: i64 = kctx
+        let res: i64 = karta_context
             .eval("let double x = @mul(x, 2) in double 4")?
             .as_int()?;
 
@@ -456,9 +441,9 @@ in
 
     #[test]
     fn function_def_2_args() -> Result<(), KartaError> {
-        let kctx = KartaContext::new();
+        let mut karta_context = KartaContext::new();
 
-        let res: i64 = kctx
+        let res: i64 = karta_context
             .eval("let my-add x y = @add(x, y) in my-add 15 95")?
             .as_int()?;
 
@@ -468,9 +453,9 @@ in
 
     #[test]
     fn if_then_else() -> Result<(), KartaError> {
-        let kctx = KartaContext::new();
+        let mut karta_context = KartaContext::new();
 
-        let res: i64 = kctx.eval("let safe-div = \\x -> \\y -> if @eql(y, 0) then .inf else @div(x, y) in (safe-div 100 4)")?.as_int()?;
+        let res: i64 = karta_context.eval("let safe-div = \\x -> \\y -> if @eql(y, 0) then .inf else @div(x, y) in (safe-div 100 4)")?.as_int()?;
 
         assert_eq!(res, 25);
         Ok(())
@@ -478,9 +463,9 @@ in
 
     #[test]
     fn elif_then_else() -> Result<(), KartaError> {
-        let kctx = KartaContext::new();
+        let mut karta_context = KartaContext::new();
 
-        let res: i64 = kctx
+        let res: i64 = karta_context
             .eval("let x = 4 in if @eql(x, 0) then 0 elif @eql(x, 4) then 25 else 45")?
             .as_int()?;
 
@@ -528,9 +513,9 @@ in
     #[ignore = "patterns not impld yet"]
     #[test]
     fn list_empty_pattern_match() -> Result<(), KartaError> {
-        let kctx = KartaContext::new();
+        let mut karta_context = KartaContext::new();
 
-        let res: i64 = kctx
+        let res: i64 = karta_context
             .eval(
                 r#"let
   test [] = 111
@@ -545,7 +530,7 @@ in (test [1, 2, 3])
 
     //     #[test]
     //     fn get_map_string() -> Result<(), String> {
-    //         let karta_context = KartaContext::new();
+    //         let mut karta_context = KartaContext::new();
 
     //         let binding =
     //             karta_context.eval("let test = {.test-atom = \"Hello, World!\"} in test.test-atom")?;
@@ -557,7 +542,7 @@ in (test [1, 2, 3])
 
     //     #[test]
     //     fn truthy_falsey() -> Result<(), String> {
-    //         let karta_context = KartaContext::new();
+    //         let mut karta_context = KartaContext::new();
 
     //         let test_atom1 = karta_context.eval(".t")?.truthy()?;
     //         let test_atom2 = karta_context.eval(".nil")?.truthy()?;
@@ -569,7 +554,7 @@ in (test [1, 2, 3])
 
     //     #[test]
     //     fn list_iterator() -> Result<(), String> {
-    //         let karta_context = KartaContext::new();
+    //         let mut karta_context = KartaContext::new();
 
     //         let mut counter: i64 = 1;
     //         for elem in karta_context.eval("[1, 2, 3]")? {
@@ -582,7 +567,7 @@ in (test [1, 2, 3])
 
     //     #[test]
     //     fn double_list_iterator() -> Result<(), String> {
-    //         let karta_context = KartaContext::new();
+    //         let mut karta_context = KartaContext::new();
 
     //         let mut counter: i64 = 1;
     //         for elem in karta_context.eval("[[1, 2, 3], [4, 5, 6], [7, 8, 9]]")? {
@@ -597,7 +582,7 @@ in (test [1, 2, 3])
 
     //     #[test]
     //     fn set() -> Result<(), String> {
-    //         let kctx = KartaContext::new();
+    //         let mut karta_context = KartaContext::new();
 
     //         let res: bool = kctx.eval("{0, 1, 2, 3} 2")?.truthy()?;
 
@@ -607,7 +592,7 @@ in (test [1, 2, 3])
 
     //     #[test]
     //     fn integer_pattern_match() -> Result<(), String> {
-    //         let kctx = KartaContext::new();
+    //         let mut karta_context = KartaContext::new();
 
     //         let res = kctx
     //             .eval(

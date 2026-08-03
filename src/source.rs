@@ -31,4 +31,12 @@ impl SourceFile {
             .count();
         (line as u32 + 1, col as u32 + 1)
     }
+
+    pub fn line_col_utf16(&self, offset: u32) -> (u32, u32) {
+        let line = self.line_starts.partition_point(|&s| s <= offset) - 1;
+        let col = self.text[self.line_starts[line] as usize..offset as usize]
+            .encode_utf16()
+            .count();
+        (line as u32, col as u32)
+    }
 }
