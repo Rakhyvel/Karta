@@ -38,6 +38,8 @@ pub enum Instr {
 
     MakeClosure { dst: Slot, func_id: FunctionId },
 
+    FillCaptures { slot: Slot },
+
     Apply { dst: Slot, lhs: Slot, rhs: Slot },
 
     Jump { target: usize },
@@ -220,17 +222,36 @@ impl<'a> Lowerer<'a> {
             }
 
             Ast::Let(bindings, expr) => {
+                // Reserve slots for each binding, before lowering them
+                let mut group_slots = Vec::with_capacity(bindings.len());
+                for binding in bindings {
+                    let def = self.elab.define(*binding);
+                    let slot = self.new_slot();
+                    self.top_fn_mut().scope.insert(def, slot);
+                    group_slots.push(slot);
+                }
+
                 for binding in bindings {
                     self.lower_ast(*binding);
                 }
+
+                for slot in group_slots {
+                    self.emit(Instr::FillCaptures { slot });
+                }
+
                 self.lower_ast(*expr)
             }
 
             Ast::Binding { params, rhs, .. } => {
                 let def = self.elab.define(id);
-                let slot = self.lower_curried(params, *rhs);
-                self.top_fn_mut().scope.insert(def, slot);
-                slot
+                let dst = *self
+                    .top_fn()
+                    .scope
+                    .get(&def)
+                    .expect("should be reserved by Let");
+                let src = self.lower_curried(params, *rhs);
+                self.emit(Instr::Move { dst, src });
+                dst
             }
 
             Ast::Lambda { arg, body } => self.lower_lambda(*arg, |this| this.lower_ast(*body)),

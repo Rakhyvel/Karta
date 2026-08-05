@@ -9,6 +9,7 @@ use crate::{
     walker::AstVisitor,
 };
 
+#[derive(Debug)]
 pub struct Elaboration {
     scopes: ScopeArena,
     defs: DefArena,
@@ -35,6 +36,7 @@ impl Elaboration {
         }
     }
 
+    /// Get the DefId that `ast` defines
     pub fn define(&self, ast: AstId) -> DefId {
         *self.defines.get(&ast).unwrap()
     }

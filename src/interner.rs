@@ -11,6 +11,7 @@ pub struct Id<T> {
 }
 
 /// A bidirectional table mapping interned strings to unique IDs
+#[derive(Debug)]
 pub struct InternTable<T: Debug + Copy + Clone> {
     values: Vec<String>,
     lookup: HashMap<String, Id<T>>,

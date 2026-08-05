@@ -1,6 +1,6 @@
 ### language
 - [x] lower strings, chars
-- [ ] knot-tying
+- [x] knot-tying
 - [ ] pattern matching arms
     - [ ] basic integer, float, char, atom patterns
     - [ ] map patterns (and map structural equality)

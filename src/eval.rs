@@ -116,26 +116,41 @@ impl Heap {
         }
     }
 
+    fn closure_func(&self, addr: HeapAddr) -> Option<FunctionId> {
+        match self.deref(addr) {
+            HeapObj::Closure(func_id, _) => Some(*func_id),
+            HeapObj::Map(_) => None,
+        }
+    }
+
+    fn set_captures(&mut self, addr: HeapAddr, values: Vec<Value>) {
+        match &mut self.objs[addr.as_usize()] {
+            HeapObj::Closure(_, vals) => *vals = values,
+            HeapObj::Map(_) => unreachable!("set_captures on a map"),
+        }
+    }
+
     fn materialize_string(
         &mut self,
         id: StringLiteralId,
         string_literal_table: &StringLiteralTable,
     ) -> HeapAddr {
-        if !self.strings.contains_key(&id) {
-            let str = string_literal_table.get(id);
-
-            let mut addr = self.alloc_map(vec![]);
-            for c in str.chars().rev() {
-                addr = self.alloc_map(vec![
-                    (Value::Atom(AtomTable::HEAD), Value::Char(c)),
-                    (Value::Atom(AtomTable::TAIL), Value::Map(addr)),
-                ])
-            }
-
-            self.strings.insert(id, addr);
+        if let Some(addr) = self.strings.get(&id) {
+            return *addr;
         }
 
-        self.strings[&id]
+        let str = string_literal_table.get(id);
+
+        let mut addr = HeapAddr::EMPTY_MAP;
+        for c in str.chars().rev() {
+            addr = self.alloc_map(vec![
+                (Value::Atom(AtomTable::HEAD), Value::Char(c)),
+                (Value::Atom(AtomTable::TAIL), Value::Map(addr)),
+            ])
+        }
+
+        self.strings.insert(id, addr);
+        addr
     }
 }
 
@@ -167,46 +182,35 @@ impl<'a> ValueRef<'a> {
 
     /// Interpret this value as a string.
     pub fn as_string(&self) -> Result<String, KartaError> {
-        match self.value {
-            Value::Map(_) => {
-                let mut curr = self.value;
-                let mut retval = String::from("");
+        let mut curr = self.value;
+        let mut retval = String::new();
 
-                while curr.is_truthy() {
-                    let Value::Map(addr) = curr else {
-                        return Err(KartaError {
-                            span: Span { start: 67, end: 67 },
-                            kind: ErrorKind::Unexpected {
-                                expected: String::from("a string"),
-                                got: format!("{:?}", self.value),
-                            },
-                        });
-                    };
-                    let c = self
-                        .heap
-                        .map_lookup(addr, Value::Atom(AtomTable::HEAD))?
-                        .as_char()
-                        .ok_or(KartaError {
-                            span: Span { start: 67, end: 67 },
-                            kind: ErrorKind::Unexpected {
-                                expected: String::from("a char"),
-                                got: format!("{:?}", self.value),
-                            },
-                        })?;
-                    retval.push(c);
-                    curr = self.heap.map_lookup(addr, Value::Atom(AtomTable::TAIL))?;
-                }
-
-                Ok(retval)
-            }
-            _ => Err(KartaError {
-                span: Span { start: 67, end: 67 },
-                kind: ErrorKind::Unexpected {
-                    expected: String::from("a string"),
-                    got: format!("{:?}", self.value),
-                },
-            }),
+        while curr.is_truthy() {
+            let Value::Map(addr) = curr else {
+                return Err(KartaError {
+                    span: Span { start: 67, end: 67 },
+                    kind: ErrorKind::Unexpected {
+                        expected: String::from("a string"),
+                        got: format!("{:?}", self.value),
+                    },
+                });
+            };
+            let c = self
+                .heap
+                .map_lookup(addr, Value::Atom(AtomTable::HEAD))?
+                .as_char()
+                .ok_or(KartaError {
+                    span: Span { start: 67, end: 67 },
+                    kind: ErrorKind::Unexpected {
+                        expected: String::from("a char"),
+                        got: format!("{:?}", curr),
+                    },
+                })?;
+            retval.push(c);
+            curr = self.heap.map_lookup(addr, Value::Atom(AtomTable::TAIL))?;
         }
+
+        Ok(retval)
     }
 }
 
@@ -268,10 +272,18 @@ impl<'a> Eval<'a> {
             }
 
             Instr::MakeClosure { dst, func_id } => {
-                let captures = &self.program.funcs[func_id.as_usize()].captures;
-                let values = captures.iter().map(|(_, src)| self.load(*src)).collect();
+                let values = self.capture_values(*func_id);
                 let func_addr = self.heap.alloc_closure(*func_id, values);
                 self.store(*dst, Value::Closure(func_addr))
+            }
+
+            Instr::FillCaptures { slot } => {
+                if let Value::Closure(addr) = self.load(*slot) {
+                    if let Some(func_id) = self.heap.closure_func(addr) {
+                        let values = self.capture_values(func_id);
+                        self.heap.set_captures(addr, values);
+                    }
+                }
             }
 
             Instr::Apply { dst, lhs, rhs } => {
@@ -312,6 +324,14 @@ impl<'a> Eval<'a> {
 
     fn jump(&mut self, ip: usize) {
         self.frame_stack.last_mut().unwrap().ip = ip;
+    }
+
+    fn capture_values(&self, func_id: FunctionId) -> Vec<Value> {
+        self.program.funcs[func_id.as_usize()]
+            .captures
+            .iter()
+            .map(|(_, src)| self.load(*src))
+            .collect()
     }
 
     fn apply(&mut self, dst: Slot, lhs: Value, rhs: Value) -> Result<(), KartaError> {

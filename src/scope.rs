@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use crate::{ast::AstId, interner::SymbolId};
 
+#[derive(Debug)]
 pub(crate) struct ScopeArena {
     scopes: Vec<Scope>,
 }
@@ -88,6 +89,7 @@ impl Scope {
     }
 }
 
+#[derive(Debug)]
 pub struct DefArena {
     defs: Vec<Definition>,
 }
@@ -123,6 +125,7 @@ impl DefId {
 pub(crate) struct Definition {
     arity: u32,
     kind: DefKind,
+    #[allow(dead_code)]
     rhs: Option<AstId>,
 }
 

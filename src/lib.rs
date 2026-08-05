@@ -506,6 +506,19 @@ in
         Ok(())
     }
 
+    #[test]
+    fn recursion() -> Result<(), KartaError> {
+        let mut karta_context = KartaContext::new();
+
+        let res = karta_context
+            .eval("let fact x = if @eql(x, 1) then x else @mul(fact (@sub(x, 1)), x) in fact 5")?
+            .as_i64()
+            .unwrap();
+
+        assert_eq!(res, 120);
+        Ok(())
+    }
+
     #[ignore = "imports not impld yet"]
     #[test]
     fn import() -> Result<(), KartaError> {
