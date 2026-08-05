@@ -1,5 +1,5 @@
 ### language
-- [ ] lower strings, chars, tokenize escapes
+- [x] lower strings, chars
 - [ ] knot-tying
 - [ ] pattern matching arms
     - [ ] basic integer, float, char, atom patterns
@@ -19,7 +19,7 @@
     - [ ] difference
 - [ ] laziness
 - [ ] multi-methods
-- [ ] string interpolation
+- [ ] string interpolation, string/char escapes
 - [ ] `where`, `$` to end of line
 
 ### CLI
@@ -28,7 +28,7 @@
 
 ### lang server
 - [x] semantic tokens
-    - [ ] parameter coloring? or make non-func bindings more constant-looking?
+    - [x] parameter coloring? or make non-func bindings more constant-looking?
 - [ ] cache Analysis per URI, don't analyze twice per keystroke
 - [ ] goto def
 - [ ] click-to-run (just eval the symbol)

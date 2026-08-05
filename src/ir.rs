@@ -4,11 +4,9 @@ use crate::{
     ast::{Ast, AstHeap, AstId},
     builtin::Builtin,
     elaborate::Elaboration,
-    error::{ErrorKind, KartaError},
-    interner::AtomId,
+    interner::{AtomId, StringLiteralId},
     pattern::PatternId,
     scope::DefId,
-    span::Span,
 };
 
 pub struct Function {
@@ -33,6 +31,8 @@ pub enum Instr {
     Const { dst: Slot, value: Value },
 
     Move { dst: Slot, src: Slot },
+
+    MakeString { dst: Slot, id: StringLiteralId },
 
     MakeMap { dst: Slot, pairs: Vec<(Slot, Slot)> },
 
@@ -63,43 +63,33 @@ pub enum Value {
 }
 
 impl Value {
-    /// Interpret this value as an integer. Does some basic conversions
-    pub fn as_int<T>(&self) -> Result<T, KartaError>
-    where
-        T: From<i64>,
-    {
+    /// Interpret this value as an integer
+    pub fn as_i64(&self) -> Option<i64> {
         match self {
-            Value::Int(x) => Ok(T::from(*x)),
-            Value::Float(x) => Ok(T::from(*x as i64)),
-            Value::Char(x) => Ok(T::from(*x as i64)),
-            _ => Err(KartaError {
-                span: Span { start: 67, end: 67 },
-                kind: ErrorKind::CannotBinop {
-                    verb: "convert between",
-                    lhs: format!("{:?}", *self),
-                    rhs: String::from("int"),
-                },
-            }),
+            Value::Int(x) => Some(*x),
+            _ => None,
         }
     }
 
-    /// Interpret this value as an integer. Does some basic conversions
-    pub fn as_float<T>(&self) -> Result<T, KartaError>
-    where
-        T: From<f64>,
-    {
+    /// Interpret this value as a float
+    pub fn as_f64(&self) -> Option<f64> {
         match self {
-            Value::Int(x) => Ok(T::from(*x as f64)),
-            Value::Float(x) => Ok(T::from(*x)),
-            _ => Err(KartaError {
-                span: Span { start: 67, end: 67 },
-                kind: ErrorKind::CannotBinop {
-                    verb: "convert between",
-                    lhs: format!("{:?}", *self),
-                    rhs: String::from("float"),
-                },
-            }),
+            Value::Float(x) => Some(*x),
+            _ => None,
         }
+    }
+
+    /// Interpret this value as a char
+    pub fn as_char(&self) -> Option<char> {
+        match self {
+            Value::Char(x) => Some(*x),
+            _ => None,
+        }
+    }
+
+    /// Determine whether this value is truthy
+    pub fn is_truthy(&self) -> bool {
+        *self != Value::Map(HeapAddr::EMPTY_MAP)
     }
 }
 
@@ -120,7 +110,9 @@ impl Slot {
 pub struct HeapAddr(u32);
 
 impl HeapAddr {
-    pub fn new(id: u32) -> Self {
+    pub const EMPTY_MAP: HeapAddr = HeapAddr::new(0);
+
+    pub const fn new(id: u32) -> Self {
         Self(id)
     }
 
@@ -187,7 +179,9 @@ impl<'a> Lowerer<'a> {
         match ast {
             Ast::Int(n) => self.lower_const(Value::Int(*n)),
             Ast::Float(n) => self.lower_const(Value::Float(*n)),
+            Ast::Char(id) => self.lower_const(Value::Char(*id)),
             Ast::Atom(id) => self.lower_const(Value::Atom(*id)),
+            Ast::String(id) => self.lower_string(*id),
             Ast::BuiltinFunction(builtin) => self.lower_const(Value::Builtin(*builtin)),
             Ast::Error => unreachable!("I only lower the finest of ASTs"),
 
@@ -282,6 +276,12 @@ impl<'a> Lowerer<'a> {
     fn lower_const(&mut self, value: Value) -> Slot {
         let dst = self.new_slot();
         self.emit(Instr::Const { dst, value });
+        dst
+    }
+
+    fn lower_string(&mut self, id: StringLiteralId) -> Slot {
+        let dst = self.new_slot();
+        self.emit(Instr::MakeString { dst, id });
         dst
     }
 

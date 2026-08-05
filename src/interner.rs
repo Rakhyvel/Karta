@@ -55,11 +55,23 @@ impl AtomTable {
         index: 0,
         _marker: PhantomData,
     };
+    pub const HEAD: AtomId = Id {
+        index: 1,
+        _marker: PhantomData,
+    };
+    pub const TAIL: AtomId = Id {
+        index: 2,
+        _marker: PhantomData,
+    };
 
     pub fn with_wellknown() -> Self {
         let mut table = Self::new();
         let t = table.intern(".t");
-        debug_assert_eq!(t, Self::TRUE);
+        assert_eq!(t, Self::TRUE);
+        let head = table.intern(".head");
+        assert_eq!(head, Self::HEAD);
+        let tail = table.intern(".tail");
+        assert_eq!(tail, Self::TAIL);
         table
     }
 }

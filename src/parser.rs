@@ -318,7 +318,7 @@ impl<'a> Parser<'a> {
     fn parse_string(&mut self) -> Result<AstId, KartaError> {
         let token_span = self.expect(TokenKind::String)?.span;
         let token_text = self.source.span_text(token_span);
-        let string_literal_id = self.strings.intern(token_text);
+        let string_literal_id = self.strings.intern(&token_text[1..token_text.len() - 1]);
         Ok(self.asts.create_string(token_span, string_literal_id))
     }
 

@@ -136,7 +136,12 @@ impl<'a> Tokenizer<'a> {
             })
         } else if char == quote {
             self.advance(TokenizerState::None);
-            self.add_token(TokenKind::Char, tokens);
+            let kind = match quote {
+                '\'' => TokenKind::Char,
+                '"' => TokenKind::String,
+                _ => unreachable!(),
+            };
+            self.add_token(kind, tokens);
             Ok(())
         } else {
             self.advance(self.state);

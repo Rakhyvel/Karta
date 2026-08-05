@@ -1,17 +1,18 @@
-use std::rc::Rc;
+use std::{collections::HashMap, rc::Rc};
 
 use crate::{
     builtin::Builtin,
     error::{ErrorKind, KartaError},
-    interner::AtomTable,
+    interner::{AtomTable, StringLiteralId, StringLiteralTable},
     ir::{Function, FunctionId, HeapAddr, Instr, Program, Slot, Value},
     span::Span,
 };
 
-pub struct Eval {
+pub struct Eval<'a> {
+    heap: &'a mut Heap,
+    string_literal_table: &'a StringLiteralTable,
     program: Program,
     frame_stack: Vec<Frame>,
-    heap: Heap,
     result: Value,
 }
 
@@ -53,18 +54,17 @@ enum HeapObj {
     Closure(FunctionId, Vec<Value>),
 }
 
-struct Heap {
+pub struct Heap {
     objs: Vec<HeapObj>,
-
-    // Interned stuff
-    empty_map_addr: HeapAddr,
+    // Memoized string literal ID => addr map
+    strings: HashMap<StringLiteralId, HeapAddr>,
 }
 
 impl Heap {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             objs: vec![HeapObj::Map(vec![])],
-            empty_map_addr: HeapAddr::new(0),
+            strings: HashMap::new(),
         }
     }
 
@@ -77,7 +77,7 @@ impl Heap {
 
     fn alloc_map(&mut self, pairs: Vec<(Value, Value)>) -> HeapAddr {
         if pairs.is_empty() {
-            self.empty_map_addr
+            HeapAddr::EMPTY_MAP
         } else {
             self.alloc(HeapObj::Map(pairs))
         }
@@ -92,7 +92,7 @@ impl Heap {
     }
 
     fn empty_map(&self) -> Value {
-        Value::Map(self.empty_map_addr)
+        Value::Map(HeapAddr::EMPTY_MAP)
     }
 
     fn map_lookup(&self, addr: HeapAddr, key: Value) -> Result<Value, KartaError> {
@@ -115,22 +115,120 @@ impl Heap {
             }),
         }
     }
+
+    fn materialize_string(
+        &mut self,
+        id: StringLiteralId,
+        string_literal_table: &StringLiteralTable,
+    ) -> HeapAddr {
+        if !self.strings.contains_key(&id) {
+            let str = string_literal_table.get(id);
+
+            let mut addr = self.alloc_map(vec![]);
+            for c in str.chars().rev() {
+                addr = self.alloc_map(vec![
+                    (Value::Atom(AtomTable::HEAD), Value::Char(c)),
+                    (Value::Atom(AtomTable::TAIL), Value::Map(addr)),
+                ])
+            }
+
+            self.strings.insert(id, addr);
+        }
+
+        self.strings[&id]
+    }
 }
 
-impl Eval {
-    pub fn new(program: Program) -> Self {
+pub struct ValueRef<'a> {
+    heap: &'a Heap,
+    value: Value,
+}
+
+impl<'a> ValueRef<'a> {
+    /// Interpret this value as an integer.
+    pub fn as_i64(&self) -> Option<i64> {
+        self.value.as_i64()
+    }
+
+    /// Interpret this value as a float
+    pub fn as_f64(&self) -> Option<f64> {
+        self.value.as_f64()
+    }
+
+    /// Interpret this value as a char
+    pub fn as_char(&self) -> Option<char> {
+        self.value.as_char()
+    }
+
+    /// Determine whether this value is truthy
+    pub fn is_truthy(&self) -> bool {
+        self.value.is_truthy()
+    }
+
+    /// Interpret this value as a string.
+    pub fn as_string(&self) -> Result<String, KartaError> {
+        match self.value {
+            Value::Map(_) => {
+                let mut curr = self.value;
+                let mut retval = String::from("");
+
+                while curr.is_truthy() {
+                    let Value::Map(addr) = curr else {
+                        return Err(KartaError {
+                            span: Span { start: 67, end: 67 },
+                            kind: ErrorKind::Unexpected {
+                                expected: String::from("a string"),
+                                got: format!("{:?}", self.value),
+                            },
+                        });
+                    };
+                    let c = self
+                        .heap
+                        .map_lookup(addr, Value::Atom(AtomTable::HEAD))?
+                        .as_char()
+                        .ok_or(KartaError {
+                            span: Span { start: 67, end: 67 },
+                            kind: ErrorKind::Unexpected {
+                                expected: String::from("a char"),
+                                got: format!("{:?}", self.value),
+                            },
+                        })?;
+                    retval.push(c);
+                    curr = self.heap.map_lookup(addr, Value::Atom(AtomTable::TAIL))?;
+                }
+
+                Ok(retval)
+            }
+            _ => Err(KartaError {
+                span: Span { start: 67, end: 67 },
+                kind: ErrorKind::Unexpected {
+                    expected: String::from("a string"),
+                    got: format!("{:?}", self.value),
+                },
+            }),
+        }
+    }
+}
+
+impl<'a> Eval<'a> {
+    pub fn new(
+        heap: &'a mut Heap,
+        string_literal_table: &'a StringLiteralTable,
+        program: Program,
+    ) -> Self {
         let entry = program.entry;
         let function = &program.funcs[entry.as_usize()];
 
         Self {
             frame_stack: vec![Frame::new(function, Value::Undefined, Slot::new(0))],
             program,
-            heap: Heap::new(),
+            heap,
+            string_literal_table,
             result: Value::Undefined,
         }
     }
 
-    pub fn eval(&mut self) -> Result<Value, KartaError> {
+    pub fn eval(mut self) -> Result<ValueRef<'a>, KartaError> {
         while let Some(frame) = self.frame_stack.last_mut() {
             let instrs = frame.instrs.clone();
 
@@ -140,7 +238,10 @@ impl Eval {
             self.execute_instruction(&instrs[ip])?;
         }
 
-        Ok(self.result)
+        Ok(ValueRef {
+            heap: self.heap,
+            value: self.result,
+        })
     }
 
     fn execute_instruction(&mut self, instr: &Instr) -> Result<(), KartaError> {
@@ -149,6 +250,11 @@ impl Eval {
 
             Instr::Move { dst, src } => {
                 self.store(*dst, self.load(*src));
+            }
+
+            Instr::MakeString { dst, id } => {
+                let addr = self.heap.materialize_string(*id, self.string_literal_table);
+                self.store(*dst, Value::Map(addr));
             }
 
             Instr::MakeMap { dst, pairs } => {
@@ -179,7 +285,7 @@ impl Eval {
 
             Instr::JumpIfFalse { target, cond } => {
                 let cond_val = self.load(*cond);
-                if !self.is_truthy(cond_val) {
+                if !cond_val.is_truthy() {
                     self.jump(*target);
                 }
             }
@@ -267,11 +373,6 @@ impl Eval {
             Builtin::Or => todo!("@or"),
             Builtin::Not => todo!("@not"),
         }
-    }
-
-    /// Only the empty map `{}` is falsey. Everything else is truthy.
-    fn is_truthy(&self, val: Value) -> bool {
-        val != self.heap.empty_map()
     }
 
     fn eql(&self, args: Value) -> Result<Value, KartaError> {
