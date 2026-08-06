@@ -61,6 +61,8 @@ pub struct Heap {
 }
 
 impl Heap {
+    const EMPTY_MAP: Value = Value::Map(HeapAddr::EMPTY_MAP);
+
     pub fn new() -> Self {
         Self {
             objs: vec![HeapObj::Map(vec![])],
@@ -91,16 +93,12 @@ impl Heap {
         &self.objs[addr.as_usize()]
     }
 
-    fn empty_map(&self) -> Value {
-        Value::Map(HeapAddr::EMPTY_MAP)
-    }
-
     fn map_lookup(&self, addr: HeapAddr, key: Value) -> Result<Value, KartaError> {
         Ok(self
             .as_map(addr)?
             .iter()
             .find_map(|(k, v)| (*k == key).then_some(*v))
-            .unwrap_or(self.empty_map()))
+            .unwrap_or(Self::EMPTY_MAP))
     }
 
     fn as_map(&self, addr: HeapAddr) -> Result<&[(Value, Value)], KartaError> {
@@ -293,6 +291,10 @@ impl<'a> Eval<'a> {
                 self.apply(*dst, lhs, rhs)?;
             }
 
+            Instr::TestConst { dst, src, value } => {
+                self.store(*dst, self.make_bool(self.load(*src) == *value));
+            }
+
             Instr::Jump { target } => self.jump(*target),
 
             Instr::JumpIfFalse { target, cond } => {
@@ -370,23 +372,61 @@ impl<'a> Eval<'a> {
         match builtin {
             Builtin::Eql => self.eql(args),
             Builtin::Neq => todo!("@neq"),
-            Builtin::Lsr => todo!("@lsr"),
-            Builtin::Lte => todo!("@lte"),
-            Builtin::Gtr => todo!("@gtr"),
-            Builtin::Gte => todo!("@gte"),
-            Builtin::Add => self.arith(args, "add", |a, b| Ok(a + b), |a, b| a + b),
-            Builtin::Sub => self.arith(args, "subtract", |a, b| Ok(a - b), |a, b| a - b),
-            Builtin::Mul => self.arith(args, "multiply", |a, b| Ok(a * b), |a, b| a * b),
+            Builtin::Lsr => self.arith(
+                args,
+                "compare",
+                |a, b| Ok(self.make_bool(a < b)),
+                |a, b| self.make_bool(a < b),
+            ),
+            Builtin::Lte => self.arith(
+                args,
+                "compare",
+                |a, b| Ok(self.make_bool(a <= b)),
+                |a, b| self.make_bool(a <= b),
+            ),
+            Builtin::Gtr => self.arith(
+                args,
+                "compare",
+                |a, b| Ok(self.make_bool(a > b)),
+                |a, b| self.make_bool(a > b),
+            ),
+            Builtin::Gte => self.arith(
+                args,
+                "compare",
+                |a, b| Ok(self.make_bool(a >= b)),
+                |a, b| self.make_bool(a >= b),
+            ),
+            Builtin::Neg => self.neg(args),
+            Builtin::Add => self.arith(
+                args,
+                "add",
+                |a, b| Ok(Value::Int(a + b)),
+                |a, b| Value::Float(a + b),
+            ),
+            Builtin::Sub => self.arith(
+                args,
+                "subtract",
+                |a, b| Ok(Value::Int(a - b)),
+                |a, b| Value::Float(a - b),
+            ),
+            Builtin::Mul => self.arith(
+                args,
+                "multiply",
+                |a, b| Ok(Value::Int(a * b)),
+                |a, b| Value::Float(a * b),
+            ),
             Builtin::Div => self.arith(
                 args,
                 "divide",
                 |a, b| {
-                    a.checked_div(b).ok_or(KartaError {
-                        span: Span { start: 67, end: 67 },
-                        kind: ErrorKind::DivisionByZero,
-                    })
+                    a.checked_div(b)
+                        .ok_or(KartaError {
+                            span: Span { start: 67, end: 67 },
+                            kind: ErrorKind::DivisionByZero,
+                        })
+                        .map(Value::Int)
                 },
-                |a, b| a / b,
+                |a, b| Value::Float(a / b),
             ),
             Builtin::Mod => todo!("@mod"),
             Builtin::And => todo!("@and"),
@@ -427,14 +467,14 @@ impl<'a> Eval<'a> {
         &self,
         args: Value,
         verb: &'static str,
-        int_op: impl FnOnce(i64, i64) -> Result<i64, KartaError>,
-        float_op: impl FnOnce(f64, f64) -> f64,
+        int_op: impl FnOnce(i64, i64) -> Result<Value, KartaError>,
+        float_op: impl FnOnce(f64, f64) -> Value,
     ) -> Result<Value, KartaError> {
         let (lhs, rhs) = self.get_pair(args)?;
 
         match (lhs, rhs) {
-            (Value::Int(x), Value::Int(y)) => Ok(Value::Int(int_op(x, y)?)),
-            (Value::Float(x), Value::Float(y)) => Ok(Value::Float(float_op(x, y))),
+            (Value::Int(x), Value::Int(y)) => Ok(int_op(x, y)?),
+            (Value::Float(x), Value::Float(y)) => Ok(float_op(x, y)),
 
             (Value::Undefined, _) => unreachable!("lhs was undefined"),
             (_, Value::Undefined) => unreachable!("rhs was undefined"),
@@ -445,6 +485,23 @@ impl<'a> Eval<'a> {
                     verb,
                     lhs: format!("{lhs:?}"), // TODO: An eval-aware value renderer
                     rhs: format!("{rhs:?}"), // TODO: An eval-aware value renderer
+                },
+            }),
+        }
+    }
+
+    fn neg(&self, arg: Value) -> Result<Value, KartaError> {
+        match arg {
+            Value::Int(x) => Ok(Value::Int(-x)),
+            Value::Float(x) => Ok(Value::Float(-x)),
+
+            Value::Undefined => unreachable!("arg was undefined"),
+
+            _ => Err(KartaError {
+                span: Span { start: 67, end: 67 },
+                kind: ErrorKind::CannotUnop {
+                    verb: "negate",
+                    expr: format!("{arg:?}"), // TODO: An eval-aware value renderer
                 },
             }),
         }
@@ -471,7 +528,7 @@ impl<'a> Eval<'a> {
         if cond {
             Value::Atom(AtomTable::TRUE)
         } else {
-            self.heap.empty_map()
+            Heap::EMPTY_MAP
         }
     }
 }

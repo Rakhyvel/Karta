@@ -18,6 +18,10 @@ pub enum ErrorKind {
     UnknownBuiltin {
         name: String,
     },
+    CannotUnop {
+        verb: &'static str,
+        expr: String,
+    },
     CannotBinop {
         verb: &'static str,
         lhs: String,
@@ -41,6 +45,7 @@ impl Display for ErrorKind {
             ErrorKind::ParseIntError(parse_int_error) => write!(f, "{parse_int_error}"),
             ErrorKind::ParseFloatError(parse_float_error) => write!(f, "{parse_float_error}"),
             ErrorKind::UnknownBuiltin { name } => write!(f, "unknown builtin `{name}`"),
+            ErrorKind::CannotUnop { verb, expr } => write!(f, "cannot {verb} {expr}"),
             ErrorKind::CannotBinop { verb, lhs, rhs } => write!(f, "cannot {verb} {lhs} and {rhs}"),
             ErrorKind::Unexpected { expected, got } => write!(f, "expected {expected}, got {got}"),
             ErrorKind::UnresolvedIdentifier { symbol_name } => {

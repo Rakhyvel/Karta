@@ -41,11 +41,8 @@ impl Elaboration {
         *self.defines.get(&ast).unwrap()
     }
 
-    pub fn pattern_define(&self, id: PatternId) -> DefId {
-        *self
-            .pattern_defines
-            .get(&id)
-            .expect("pattern ID should map to a valid def")
+    pub fn pattern_define(&self, id: PatternId) -> Option<DefId> {
+        self.pattern_defines.get(&id).copied()
     }
 
     pub fn refer(&self, ast: AstId) -> DefId {
@@ -67,6 +64,10 @@ impl Elaboration {
     pub fn def(&self, def: DefId) -> &Definition {
         self.defs.get(def)
     }
+
+    pub fn def_mut(&mut self, def: DefId) -> &mut Definition {
+        self.defs.get_mut(def)
+    }
 }
 
 pub struct Declare<'a> {
@@ -75,6 +76,8 @@ pub struct Declare<'a> {
     elab: &'a mut Elaboration,
 
     scope_stack: Vec<ScopeId>,
+    errors: Vec<KartaError>,
+    last_declared: Option<(ScopeId, DefId)>,
 }
 
 impl<'a> Declare<'a> {
@@ -86,7 +89,13 @@ impl<'a> Declare<'a> {
             patterns,
             elab,
             scope_stack: vec![root_scope_id],
+            errors: vec![],
+            last_declared: None,
         }
+    }
+
+    pub fn errors(&self) -> &[KartaError] {
+        &self.errors
     }
 }
 
@@ -111,13 +120,52 @@ impl<'a> AstVisitor for Declare<'a> {
         }
 
         // If binding, add the def to the current scope
-        if let Ast::Binding { name, params, rhs } = ast {
-            let def_id =
-                self.elab
-                    .defs
-                    .create_def(params.len() as u32, DefKind::Function, Some(*rhs));
-            self.elab.scopes.insert(this_scope_id, *name, def_id);
+        if let Ast::Binding { name, params, .. } = ast {
+            let def_id = match self.elab.scopes.lookup_ident_local(*name, this_scope_id) {
+                Some(def_id) => {
+                    // Check adjacency
+                    if let Some((last_scope, last_def)) = self.last_declared {
+                        if last_scope == this_scope_id && last_def != def_id {
+                            // Non-adjacent, an err
+                            self.errors.push(KartaError {
+                                span: self.asts.span(id),
+                                kind: ErrorKind::DivisionByZero, // TODO: Unique error
+                            });
+                        }
+                    }
+
+                    let definition = self.elab.def_mut(def_id);
+                    let def_arity = definition.arity();
+                    if def_arity == 0 {
+                        // Redefinition, always an err
+                        self.errors.push(KartaError {
+                            span: self.asts.span(id),
+                            kind: ErrorKind::DivisionByZero, // TODO: Unique error
+                        });
+                    } else if def_arity != params.len() as u32 {
+                        // Mismatched arity, an err
+                        self.errors.push(KartaError {
+                            span: self.asts.span(id),
+                            kind: ErrorKind::DivisionByZero, // TODO: Unique error
+                        });
+                    } else {
+                        // All good, add the clause
+                        definition.push_clause(id);
+                    }
+                    def_id
+                }
+                None => {
+                    let def_id =
+                        self.elab
+                            .defs
+                            .create_def(params.len() as u32, DefKind::Function, Some(id));
+                    self.elab.scopes.insert(this_scope_id, *name, def_id);
+                    def_id
+                }
+            };
+
             self.elab.defines.insert(id, def_id);
+            self.last_declared = Some((this_scope_id, def_id));
         }
 
         // If this AST defines a new lexical scope, push it to the stack
@@ -155,6 +203,8 @@ impl<'a> AstVisitor for Declare<'a> {
                 self.elab.scopes.insert(this_scope_id, *name, param_def_id);
                 self.elab.pattern_defines.insert(id, param_def_id);
             }
+
+            Pattern::Int(_) => {}
         }
 
         Ok(())
@@ -165,7 +215,7 @@ pub struct Resolve<'a> {
     asts: &'a AstHeap,
     symbols: &'a SymbolTable,
     elab: &'a mut Elaboration,
-    pub errors: Vec<KartaError>,
+    errors: Vec<KartaError>,
 }
 
 impl<'a> Resolve<'a> {
@@ -176,6 +226,10 @@ impl<'a> Resolve<'a> {
             elab,
             errors: vec![],
         }
+    }
+
+    pub fn errors(&self) -> &[KartaError] {
+        &self.errors
     }
 }
 

@@ -25,6 +25,7 @@ builtins! {
     Lte => "@lte",
     Gtr => "@gtr",
     Gte => "@gte",
+    Neg => "@neg",
     Add => "@add",
     Sub => "@sub",
     Mul => "@mul",

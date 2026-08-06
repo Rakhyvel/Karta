@@ -125,7 +125,7 @@ impl KartaContext {
         tokenizer.tokenize(&mut old_tokens)?;
         let tokens = layout::layout(&old_tokens);
 
-        let mut parser = Parser::new(
+        let parser = Parser::new(
             &source,
             &tokens,
             &mut self.ast_heap,
@@ -134,14 +134,20 @@ impl KartaContext {
             &mut self.string_literal_table,
             &mut self.atom_table,
         );
-        let expr_ast = parser.parse_expr()?;
+        let (expr_ast, parse_errors) = parser.parse_expr();
+        if !parse_errors.is_empty() {
+            return Err(parse_errors[0].clone());
+        }
 
-        AstWalker::walk(
+        let declare = AstWalker::walk(
             &self.ast_heap,
             &self.pattern_heap,
             expr_ast,
             Declare::new(&self.ast_heap, &self.pattern_heap, &mut self.elab),
         )?;
+        if !declare.errors().is_empty() {
+            return Err(declare.errors()[0].clone());
+        }
 
         let resolve = AstWalker::walk(
             &self.ast_heap,
@@ -149,11 +155,11 @@ impl KartaContext {
             expr_ast,
             Resolve::new(&self.ast_heap, &self.symbol_table, &mut self.elab),
         )?;
-        if !resolve.errors.is_empty() {
-            return Err(resolve.errors[0].clone());
+        if !resolve.errors().is_empty() {
+            return Err(resolve.errors()[0].clone());
         }
 
-        let program = Lowerer::new(&self.ast_heap, &self.elab).lower(expr_ast);
+        let program = Lowerer::new(&self.ast_heap, &self.pattern_heap, &self.elab).lower(expr_ast);
 
         let eval = Eval::new(&mut self.heap, &self.string_literal_table, program);
         eval.eval()
@@ -519,6 +525,28 @@ in
         Ok(())
     }
 
+    #[test]
+    fn integer_pattern_match() -> Result<(), KartaError> {
+        let mut karta_context = KartaContext::new();
+
+        let res = karta_context
+            .eval(
+                r#"let
+    even? 0 = .t
+    even? 1 = {}
+    even? n =
+        if @lsr(n, 0)
+        then even? (@neg n)
+        else @sub(n, 2)
+in even? 4
+    "#,
+            )?
+            .is_truthy();
+
+        assert!(res);
+        Ok(())
+    }
+
     #[ignore = "imports not impld yet"]
     #[test]
     fn import() -> Result<(), KartaError> {
@@ -600,28 +628,6 @@ in (test [1, 2, 3])
     //             }
     //         }
 
-    //         Ok(())
-    //     }
-
-    //     #[test]
-    //     fn integer_pattern_match() -> Result<(), String> {
-    //         let mut karta_context = KartaContext::new();
-
-    //         let res = kctx
-    //             .eval(
-    //                 r#"let
-    //   even? 0 = .t
-    //   even? 1 = .f
-    //   even? n =
-    //     if @lsr(n, 0)
-    //     then even? (@neg n)
-    //     else @sub(n, 2)
-    // in even? (@neg 4)
-    // "#,
-    //             )?
-    //             .truthy()?;
-
-    //         assert!(res);
     //         Ok(())
     //     }
 }

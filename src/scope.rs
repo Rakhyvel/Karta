@@ -41,6 +41,16 @@ impl ScopeArena {
 
         None
     }
+
+    pub(crate) fn lookup_ident_local(&self, key: SymbolId, scope: ScopeId) -> Option<DefId> {
+        let scope = self.get_scope(scope);
+
+        if let Some(def) = scope.get_def(key) {
+            return Some(*def);
+        }
+
+        None
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -99,14 +109,24 @@ impl DefArena {
         Self { defs: vec![] }
     }
 
-    pub(crate) fn create_def(&mut self, arity: u32, kind: DefKind, rhs: Option<AstId>) -> DefId {
+    pub(crate) fn create_def(&mut self, arity: u32, kind: DefKind, clause: Option<AstId>) -> DefId {
+        let param_defs = (0..arity)
+            .map(|_| self.create_def(0, DefKind::AnonymousParameter, None))
+            .collect();
+
         let retval = DefId::new(self.defs.len() as u32);
-        self.defs.push(Definition::new(arity, kind, rhs));
+
+        self.defs
+            .push(Definition::new(arity, kind, clause, param_defs));
         retval
     }
 
     pub(crate) fn get(&self, def: DefId) -> &Definition {
         &self.defs[def.0 as usize]
+    }
+
+    pub(crate) fn get_mut(&mut self, def: DefId) -> &mut Definition {
+        &mut self.defs[def.0 as usize]
     }
 }
 
@@ -125,19 +145,27 @@ impl DefId {
 pub(crate) struct Definition {
     arity: u32,
     kind: DefKind,
-    #[allow(dead_code)]
-    rhs: Option<AstId>,
+    /// vec of the bindings if this def is from a binding, empty is from a parameter
+    clauses: Vec<AstId>,
+    /// synthetic defs for the params, so the captures resolve normally
+    param_defs: Vec<DefId>,
 }
 
 #[derive(Debug, Clone)]
 pub enum DefKind {
     Function,
     Parameter,
+    AnonymousParameter,
 }
 
 impl Definition {
-    pub fn new(arity: u32, kind: DefKind, rhs: Option<AstId>) -> Self {
-        Self { arity, kind, rhs }
+    pub fn new(arity: u32, kind: DefKind, clause: Option<AstId>, param_defs: Vec<DefId>) -> Self {
+        Self {
+            arity,
+            kind,
+            clauses: clause.into_iter().collect(),
+            param_defs,
+        }
     }
 
     pub fn arity(&self) -> u32 {
@@ -146,5 +174,17 @@ impl Definition {
 
     pub fn kind(&self) -> &DefKind {
         &self.kind
+    }
+
+    pub fn clauses(&self) -> &[AstId] {
+        &self.clauses
+    }
+
+    pub fn push_clause(&mut self, id: AstId) {
+        self.clauses.push(id);
+    }
+
+    pub fn param_defs(&self) -> &[DefId] {
+        &self.param_defs
     }
 }

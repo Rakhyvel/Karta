@@ -58,8 +58,13 @@ impl<'a> Parser<'a> {
         )
     }
 
-    pub(crate) fn parse_expr(&mut self) -> Result<AstId, KartaError> {
-        self.let_in_expr()
+    pub(crate) fn parse_expr(mut self) -> (AstId, Vec<KartaError>) {
+        let expr_ast = self.let_in_expr().unwrap_or_else(|e| {
+            self.errors.push(e);
+            self.asts.create_error(self.peek().span)
+        });
+
+        (expr_ast, self.errors)
     }
 
     /// Returns the token at the begining of the stream without removing it
@@ -161,9 +166,10 @@ impl<'a> Parser<'a> {
         let params: Vec<PatternId> = self.parse_pattern_list()?;
 
         // Parse the RHS after the `=`
-        let rhs_value = self
-            .let_in_expr()
-            .unwrap_or(self.asts.create_error(self.peek().span));
+        let rhs_value = self.let_in_expr().unwrap_or_else(|e| {
+            self.errors.push(e);
+            self.asts.create_error(self.peek().span)
+        });
         self.accept_newlines();
 
         // Create the binding
@@ -271,6 +277,7 @@ impl<'a> Parser<'a> {
     fn parse_pattern(&mut self) -> Result<PatternId, KartaError> {
         match self.peek().kind {
             TokenKind::Identifier => self.parse_pattern_identifier(),
+            TokenKind::Integer => self.parse_pattern_integer(),
             _ => Err(KartaError {
                 span: self.peek().span,
                 kind: ErrorKind::Unexpected {
@@ -353,6 +360,19 @@ impl<'a> Parser<'a> {
         let name_text = self.source.span_text(name_span);
         let name = self.symbols.intern(name_text);
         Ok(self.patterns.create_identifier(name_span, name))
+    }
+
+    fn parse_pattern_integer(&mut self) -> Result<PatternId, KartaError> {
+        let token = self.expect(TokenKind::Integer)?;
+        let value = self
+            .source
+            .span_text(token.span)
+            .parse::<i64>()
+            .map_err(|e| KartaError {
+                span: token.span,
+                kind: ErrorKind::ParseIntError(e),
+            })?;
+        Ok(self.patterns.create_int(token.span, value))
     }
 
     fn parse_if_expr(&mut self) -> Result<AstId, KartaError> {

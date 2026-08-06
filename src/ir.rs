@@ -5,7 +5,7 @@ use crate::{
     builtin::Builtin,
     elaborate::Elaboration,
     interner::{AtomId, StringLiteralId},
-    pattern::PatternId,
+    pattern::{Pattern, PatternHeap, PatternId},
     scope::DefId,
 };
 
@@ -41,6 +41,8 @@ pub enum Instr {
     FillCaptures { slot: Slot },
 
     Apply { dst: Slot, lhs: Slot, rhs: Slot },
+
+    TestConst { dst: Slot, src: Slot, value: Value },
 
     Jump { target: usize },
 
@@ -130,6 +132,7 @@ pub struct Program {
 
 pub struct Lowerer<'a> {
     asts: &'a AstHeap,
+    patterns: &'a PatternHeap,
     elab: &'a Elaboration,
     funcs: Vec<Function>,
     stack: Vec<FnState>,
@@ -153,9 +156,10 @@ impl FnState {
 }
 
 impl<'a> Lowerer<'a> {
-    pub fn new(asts: &'a AstHeap, elab: &'a Elaboration) -> Self {
+    pub fn new(asts: &'a AstHeap, patterns: &'a PatternHeap, elab: &'a Elaboration) -> Self {
         Self {
             asts,
+            patterns,
             elab,
             funcs: Vec::new(),
             stack: Vec::new(),
@@ -226,13 +230,20 @@ impl<'a> Lowerer<'a> {
                 let mut group_slots = Vec::with_capacity(bindings.len());
                 for binding in bindings {
                     let def = self.elab.define(*binding);
-                    let slot = self.new_slot();
-                    self.top_fn_mut().scope.insert(def, slot);
-                    group_slots.push(slot);
+                    if !self.top_fn().scope.contains_key(&def) {
+                        let slot = self.new_slot();
+                        self.top_fn_mut().scope.insert(def, slot);
+                        group_slots.push(slot);
+                    }
                 }
 
                 for binding in bindings {
-                    self.lower_ast(*binding);
+                    let def_id = self.elab.define(*binding);
+                    let def = self.elab.def(def_id);
+                    assert!(!def.clauses().is_empty()); // should have at least one clause
+                    if def.clauses()[0] == *binding {
+                        self.lower_ast(*binding);
+                    }
                 }
 
                 for slot in group_slots {
@@ -242,19 +253,30 @@ impl<'a> Lowerer<'a> {
                 self.lower_ast(*expr)
             }
 
-            Ast::Binding { params, rhs, .. } => {
-                let def = self.elab.define(id);
+            Ast::Binding { .. } => {
+                let def_id = self.elab.define(id);
+                let def = self.elab.def(def_id);
+
+                assert!(!def.clauses().is_empty()); // should have at least one clause
+                assert!(def.clauses()[0] == id); // Only ever called for the first clause of a definition
                 let dst = *self
                     .top_fn()
                     .scope
-                    .get(&def)
+                    .get(&def_id)
                     .expect("should be reserved by Let");
-                let src = self.lower_curried(params, *rhs);
+                let clauses = def.clauses();
+                let src = self.lower_clauses(clauses);
                 self.emit(Instr::Move { dst, src });
                 dst
             }
 
-            Ast::Lambda { arg, body } => self.lower_lambda(*arg, |this| this.lower_ast(*body)),
+            Ast::Lambda { arg, body } => {
+                let def = self
+                    .elab
+                    .pattern_define(*arg)
+                    .expect("TODO: support lambda patterns");
+                self.lower_anon_lambda(def, |this| this.lower_ast(*body))
+            }
 
             Ast::If(conds, else_body) => {
                 let result = self.new_slot();
@@ -312,20 +334,112 @@ impl<'a> Lowerer<'a> {
         dst
     }
 
-    /// Takes a bunch of params [p0, p1, ..., pn], a body, and lowers it to `\p0 -> \p1 -> ... -> \pn -> body`
-    fn lower_curried(&mut self, params: &[PatternId], body: AstId) -> Slot {
-        match params.split_first() {
-            None => self.lower_ast(body),
-            Some((first, rest)) => self.lower_lambda(*first, |this| this.lower_curried(rest, body)),
+    /// Lowers
+    fn lower_clauses(&mut self, clauses: &[AstId]) -> Slot {
+        let def = self.elab.def(self.elab.define(clauses[0]));
+        let param_defs = def.param_defs().to_vec();
+        self.lower_param_chain(clauses, &param_defs, 0)
+    }
+
+    /// Emits \p_0 -> \p_1 -> ... \p_n -> dispatch
+    fn lower_param_chain(&mut self, clauses: &[AstId], param_defs: &[DefId], i: usize) -> Slot {
+        match param_defs.get(i) {
+            None => self.lower_dispatch(clauses, param_defs),
+            Some(def) => {
+                let def = *def;
+                self.lower_anon_lambda(def, |this| {
+                    this.lower_param_chain(clauses, param_defs, i + 1)
+                })
+            }
         }
     }
 
-    fn lower_lambda(&mut self, arg: PatternId, lower_body: impl FnOnce(&mut Self) -> Slot) -> Slot {
+    fn lower_dispatch(&mut self, clauses: &[AstId], param_defs: &[DefId]) -> Slot {
+        let level = self.stack.len() - 1;
+        let anon_params: Vec<Slot> = param_defs
+            .iter()
+            .map(|d| self.resolve(*d, level)) // captures happen here
+            .collect();
+
+        let result = self.new_slot();
+        let mut end_sites = Vec::new();
+
+        for clause in clauses {
+            let Some(Ast::Binding {
+                params: pats, rhs, ..
+            }) = self.asts.get(*clause)
+            else {
+                unreachable!("clause wasn't a binding")
+            };
+            let (pats, rhs) = (pats.clone(), *rhs);
+
+            // emit tests, jump to next clause on failure
+            let mut fail_sites = Vec::new();
+            for (pat, anon_param) in pats.iter().zip(&anon_params) {
+                if let Some(site) = self.lower_pattern_test(*pat, *anon_param) {
+                    fail_sites.push(site);
+                }
+            }
+
+            // destructure the anonymous param
+            for (pat, anon_param) in pats.iter().zip(&anon_params) {
+                // TODO: Other kinds of destructuring
+                if let Some(def) = self.elab.pattern_define(*pat) {
+                    self.top_fn_mut().scope.insert(def, *anon_param);
+                }
+            }
+
+            let body = self.lower_ast(rhs);
+            self.emit(Instr::Move {
+                dst: result,
+                src: body,
+            });
+            end_sites.push(self.emit_patchable(Instr::Jump { target: usize::MAX }));
+
+            for site in fail_sites {
+                self.patch_here(site);
+            }
+        }
+
+        self.emit(Instr::MakeMap {
+            dst: result,
+            pairs: vec![],
+        }); // empty map if function is non-total
+
+        for site in end_sites {
+            self.patch_here(site);
+        }
+
+        result
+    }
+
+    fn lower_pattern_test(&mut self, pat: PatternId, anon_param: Slot) -> Option<PatchSite> {
+        match self.patterns.get(pat).expect("invalid pattern id") {
+            Pattern::Identifier(_) => None, // irrefutable babey
+            Pattern::Int(n) => {
+                let cond = self.new_slot();
+                self.emit(Instr::TestConst {
+                    dst: cond,
+                    src: anon_param,
+                    value: Value::Int(*n),
+                });
+                Some(self.emit_patchable(Instr::JumpIfFalse {
+                    target: usize::MAX,
+                    cond,
+                }))
+            }
+        }
+    }
+
+    fn lower_anon_lambda(
+        &mut self,
+        arg: DefId,
+        lower_body: impl FnOnce(&mut Self) -> Slot,
+    ) -> Slot {
         // Push a new function to the stack, fill it in
         self.push_fn();
-        let def = self.elab.pattern_define(arg);
         let param_slot = self.new_slot();
-        self.top_fn_mut().scope.insert(def, param_slot);
+        self.top_fn_mut().scope.insert(arg, param_slot);
         let body_slot = lower_body(self);
         self.emit(Instr::Ret { src: body_slot });
 

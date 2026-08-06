@@ -112,8 +112,8 @@ impl KartaContext {
             }
         };
 
-        for err in resolve.errors {
-            analysis.diagnostics.push(err);
+        for err in resolve.errors() {
+            analysis.diagnostics.push(err.clone());
         }
 
         for (ast_id, def_id) in self.elab.references() {
@@ -158,7 +158,7 @@ fn semantic_kind(kind: TokenKind) -> SemanticKind {
 
 fn kind_of(definition: &Definition) -> SemanticKind {
     match definition.kind() {
-        DefKind::Parameter => SemanticKind::Parameter,
+        DefKind::Parameter | DefKind::AnonymousParameter => SemanticKind::Parameter,
         DefKind::Function if definition.arity() > 0 => SemanticKind::Function,
         DefKind::Function => SemanticKind::Constant,
     }

@@ -1,6 +1,6 @@
 use crate::{
     ast::{Ast, AstHeap, AstId},
-    pattern::{PatternHeap, PatternId},
+    pattern::{Pattern, PatternHeap, PatternId},
 };
 
 pub struct AstWalker<'a, V> {
@@ -126,7 +126,7 @@ where
         let pattern = self.patterns.get(id).unwrap();
 
         match pattern {
-            crate::pattern::Pattern::Identifier(_) => {}
+            Pattern::Identifier(_) | Pattern::Int(_) => {}
         }
 
         self.visitor.leave_pattern(id)?;
