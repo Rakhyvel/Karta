@@ -278,6 +278,8 @@ impl<'a> Parser<'a> {
         match self.peek().kind {
             TokenKind::Identifier => self.parse_pattern_identifier(),
             TokenKind::Integer => self.parse_pattern_integer(),
+            TokenKind::Char => self.parse_pattern_char(),
+            TokenKind::Atom => self.parse_pattern_atom(),
             _ => Err(KartaError {
                 span: self.peek().span,
                 kind: ErrorKind::Unexpected {
@@ -373,6 +375,21 @@ impl<'a> Parser<'a> {
                 kind: ErrorKind::ParseIntError(e),
             })?;
         Ok(self.patterns.create_int(token.span, value))
+    }
+
+    fn parse_pattern_char(&mut self) -> Result<PatternId, KartaError> {
+        let token = self.expect(TokenKind::Char)?;
+        Ok(self.patterns.create_char(
+            token.span,
+            self.source.span_text(token.span).chars().nth(1).unwrap(),
+        ))
+    }
+
+    fn parse_pattern_atom(&mut self) -> Result<PatternId, KartaError> {
+        let token_span = self.expect(TokenKind::Atom)?.span;
+        let token_text = self.source.span_text(token_span);
+        let atom_id = self.atoms.intern(token_text);
+        Ok(self.patterns.create_atom(token_span, atom_id))
     }
 
     fn parse_if_expr(&mut self) -> Result<AstId, KartaError> {

@@ -527,23 +527,70 @@ in
 
     #[test]
     fn integer_pattern_match() -> Result<(), KartaError> {
-        let mut karta_context = KartaContext::new();
+        let src = r#"let
+    even? 0 = 0
+    even? 1 = 1
+    even? n = even? (@sub(n, 2))
+in even? "#;
 
-        let res = karta_context
-            .eval(
-                r#"let
-    even? 0 = .t
-    even? 1 = {}
-    even? n =
-        if @lsr(n, 0)
-        then even? (@neg n)
-        else @sub(n, 2)
-in even? 4
-    "#,
-            )?
-            .is_truthy();
+        for (input, expected) in [(0, 0), (1, 1), (4, 0), (5, 1), (10, 0)] {
+            let mut kctx = KartaContext::new();
 
-        assert!(res);
+            let res = kctx.eval(format!("{src}{input}"))?.as_i64().unwrap();
+
+            assert_eq!(res, expected);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn char_pattern_match() -> Result<(), KartaError> {
+        let src = r#"let
+    eval 'a' = 100
+    eval 'b' = 200
+    eval n = 300
+in eval "#;
+
+        for (input, expected) in [
+            ("'a'", 100),
+            ("'b'", 200),
+            ("'c'", 300),
+            ("0", 300),
+            ("4", 300),
+        ] {
+            let mut kctx = KartaContext::new();
+
+            let res = kctx.eval(format!("{src}{input}"))?.as_i64().unwrap();
+
+            assert_eq!(res, expected);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn atom_pattern_match() -> Result<(), KartaError> {
+        let src = r#"let
+    eval .a = 100
+    eval .b = 200
+    eval n = 300
+in eval "#;
+
+        for (input, expected) in [
+            (".a", 100),
+            (".b", 200),
+            (".c", 300),
+            ("0", 300),
+            ("4", 300),
+        ] {
+            let mut kctx = KartaContext::new();
+
+            let res = kctx.eval(format!("{src}{input}"))?.as_i64().unwrap();
+
+            assert_eq!(res, expected);
+        }
+
         Ok(())
     }
 

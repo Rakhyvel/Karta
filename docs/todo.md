@@ -2,7 +2,8 @@
 - [x] lower strings, chars
 - [x] knot-tying
 - [ ] pattern matching arms
-    - [ ] basic integer, float, char, atom patterns
+    - [x] basic integer, char, atom patterns
+    - [ ] `@has?`
     - [ ] map patterns (and map structural equality)
     - [ ] list patterns, set patterns, tuple patterns
     - [ ] `match` ... `with`
@@ -10,17 +11,17 @@
 - [ ] imports
 - [ ] eval-aware Value formatter
 - [ ] define all builtins
-- [ ] store an error list, pass that along
+- [ ] infixity
+- [x] store an error list, pass that along
 - [ ] core.k
 - [ ] runtime spans in eval, stack trace on eval panic
-- [ ] applicable algebra
-    - [ ] union
-    - [ ] intersection
-    - [ ] difference
 - [ ] laziness
-- [ ] multi-methods
 - [ ] string interpolation, string/char escapes
 - [ ] `where`, `$` to end of line
+- [ ] `when` for guards
+
+### Core
+- [ ] applicative algebra combinators `|`, `&`, `~`
 
 ### CLI
 - [ ] actually make it exist, take in a file and eval the `main` symbol

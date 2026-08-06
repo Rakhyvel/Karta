@@ -69,6 +69,7 @@ pub enum Value {
 impl Value {
     /// Interpret this value as an integer
     pub fn as_i64(&self) -> Option<i64> {
+        debug_assert!(!matches!(*self, Value::Undefined));
         match self {
             Value::Int(x) => Some(*x),
             _ => None,
@@ -77,6 +78,7 @@ impl Value {
 
     /// Interpret this value as a float
     pub fn as_f64(&self) -> Option<f64> {
+        debug_assert!(!matches!(*self, Value::Undefined));
         match self {
             Value::Float(x) => Some(*x),
             _ => None,
@@ -85,6 +87,7 @@ impl Value {
 
     /// Interpret this value as a char
     pub fn as_char(&self) -> Option<char> {
+        debug_assert!(!matches!(*self, Value::Undefined));
         match self {
             Value::Char(x) => Some(*x),
             _ => None,
@@ -93,6 +96,7 @@ impl Value {
 
     /// Determine whether this value is truthy
     pub fn is_truthy(&self) -> bool {
+        debug_assert!(!matches!(*self, Value::Undefined));
         *self != Value::Map(HeapAddr::EMPTY_MAP)
     }
 }
@@ -414,21 +418,23 @@ impl<'a> Lowerer<'a> {
     }
 
     fn lower_pattern_test(&mut self, pat: PatternId, anon_param: Slot) -> Option<PatchSite> {
-        match self.patterns.get(pat).expect("invalid pattern id") {
-            Pattern::Identifier(_) => None, // irrefutable babey
-            Pattern::Int(n) => {
-                let cond = self.new_slot();
-                self.emit(Instr::TestConst {
-                    dst: cond,
-                    src: anon_param,
-                    value: Value::Int(*n),
-                });
-                Some(self.emit_patchable(Instr::JumpIfFalse {
-                    target: usize::MAX,
-                    cond,
-                }))
-            }
-        }
+        let value = match self.patterns.get(pat).expect("invalid pattern id") {
+            Pattern::Identifier(_) => return None, // irrefutable babey
+            Pattern::Int(n) => Value::Int(*n),
+            Pattern::Char(c) => Value::Char(*c),
+            Pattern::Atom(id) => Value::Atom(*id),
+        };
+
+        let cond = self.new_slot();
+        self.emit(Instr::TestConst {
+            dst: cond,
+            src: anon_param,
+            value,
+        });
+        Some(self.emit_patchable(Instr::JumpIfFalse {
+            target: usize::MAX,
+            cond,
+        }))
     }
 
     fn lower_anon_lambda(

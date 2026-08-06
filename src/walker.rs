@@ -126,7 +126,7 @@ where
         let pattern = self.patterns.get(id).unwrap();
 
         match pattern {
-            Pattern::Identifier(_) | Pattern::Int(_) => {}
+            Pattern::Identifier(_) | Pattern::Int(_) | Pattern::Char(_) | Pattern::Atom(_) => {}
         }
 
         self.visitor.leave_pattern(id)?;

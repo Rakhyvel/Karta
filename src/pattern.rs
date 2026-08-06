@@ -1,4 +1,7 @@
-use crate::{interner::SymbolId, span::Span};
+use crate::{
+    interner::{AtomId, SymbolId},
+    span::Span,
+};
 
 /// Contains the ASTs used in a Karta context
 pub(crate) struct PatternHeap {
@@ -32,6 +35,14 @@ impl PatternHeap {
         self.insert(Pattern::Int(n), span)
     }
 
+    pub(crate) fn create_char(&mut self, span: Span, c: char) -> PatternId {
+        self.insert(Pattern::Char(c), span)
+    }
+
+    pub(crate) fn create_atom(&mut self, span: Span, id: AtomId) -> PatternId {
+        self.insert(Pattern::Atom(id), span)
+    }
+
     /// Retrieves a reference to an Ast for a given ID, if it exists
     pub(crate) fn get(&self, id: PatternId) -> Option<&Pattern> {
         self.patterns.get(id.as_u32() as usize)
@@ -62,5 +73,7 @@ impl PatternId {
 pub enum Pattern {
     Identifier(SymbolId),
     Int(i64),
+    Char(char),
+    Atom(AtomId),
     // TODO: Add more!
 }
