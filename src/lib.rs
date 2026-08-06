@@ -594,6 +594,36 @@ in eval "#;
         Ok(())
     }
 
+    #[test]
+    fn set_pattern_match() -> Result<(), KartaError> {
+        let src = r#"let
+    ; TODO: nested maps
+    ; eval {{.d}} = 10
+    eval {.a, .b} = 400
+    eval {.a} = 100
+    eval {.b} = 200
+    eval n = 300
+in eval "#;
+
+        for (input, expected) in [
+            ("{.a}", 100),
+            ("{.b, .c}", 200),
+            ("{.b, .a}", 400),
+            ("{.c}", 300),
+            ("{}", 300),
+            ("0", 300),
+            ("4", 300),
+        ] {
+            let mut kctx = KartaContext::new();
+
+            let res = kctx.eval(format!("{src}{input}"))?.as_i64().unwrap();
+
+            assert_eq!(res, expected);
+        }
+
+        Ok(())
+    }
+
     #[ignore = "imports not impld yet"]
     #[test]
     fn import() -> Result<(), KartaError> {

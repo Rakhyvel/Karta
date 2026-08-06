@@ -3,9 +3,9 @@
 - [x] knot-tying
 - [ ] pattern matching arms
     - [x] basic integer, char, atom patterns
-    - [ ] `@has?`
+    - [ ] set patterns
     - [ ] map patterns (and map structural equality)
-    - [ ] list patterns, set patterns, tuple patterns
+    - [ ] list patterns, tuple patterns
     - [ ] `match` ... `with`
     - [ ] type predicates
 - [ ] imports

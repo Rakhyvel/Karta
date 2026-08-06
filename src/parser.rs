@@ -277,9 +277,9 @@ impl<'a> Parser<'a> {
     fn parse_pattern(&mut self) -> Result<PatternId, KartaError> {
         match self.peek().kind {
             TokenKind::Identifier => self.parse_pattern_identifier(),
-            TokenKind::Integer => self.parse_pattern_integer(),
-            TokenKind::Char => self.parse_pattern_char(),
-            TokenKind::Atom => self.parse_pattern_atom(),
+            TokenKind::Integer | TokenKind::Char | TokenKind::Atom | TokenKind::LeftBrace => {
+                self.parse_pattern_const()
+            }
             _ => Err(KartaError {
                 span: self.peek().span,
                 kind: ErrorKind::Unexpected {
@@ -362,6 +362,41 @@ impl<'a> Parser<'a> {
         let name_text = self.source.span_text(name_span);
         let name = self.symbols.intern(name_text);
         Ok(self.patterns.create_identifier(name_span, name))
+    }
+
+    fn parse_pattern_const(&mut self) -> Result<PatternId, KartaError> {
+        match self.peek().kind {
+            TokenKind::Integer => self.parse_pattern_integer(),
+            TokenKind::Char => self.parse_pattern_char(),
+            TokenKind::Atom => self.parse_pattern_atom(),
+            TokenKind::LeftBrace => self.parse_pattern_map(),
+            _ => Err(KartaError {
+                span: self.peek().span,
+                kind: ErrorKind::Unexpected {
+                    expected: String::from("a pattern"),
+                    got: format!("{:?}", self.peek().kind),
+                },
+            }),
+        }
+    }
+
+    fn parse_pattern_map(&mut self) -> Result<PatternId, KartaError> {
+        let token = self.expect(TokenKind::LeftBrace)?;
+        let mut keys: Vec<PatternId> = Vec::new();
+
+        if self.accept(TokenKind::RightBrace).is_none() {
+            keys.push(self.parse_pattern_const()?);
+
+            while self.accept(TokenKind::Comma).is_some() {
+                if let TokenKind::RightBrace = self.peek().kind {
+                    // Comma accepted above was a trailing comma, break
+                    break;
+                }
+                keys.push(self.parse_pattern_const()?);
+            }
+            self.expect(TokenKind::RightBrace)?;
+        }
+        Ok(self.patterns.create_map(token.span, keys))
     }
 
     fn parse_pattern_integer(&mut self) -> Result<PatternId, KartaError> {

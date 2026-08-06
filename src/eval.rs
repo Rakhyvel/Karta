@@ -93,12 +93,17 @@ impl Heap {
         &self.objs[addr.as_usize()]
     }
 
-    fn map_lookup(&self, addr: HeapAddr, key: Value) -> Result<Value, KartaError> {
+    /// Returns the value, if present, or None
+    fn map_get(&self, addr: HeapAddr, key: Value) -> Result<Option<Value>, KartaError> {
         Ok(self
             .as_map(addr)?
             .iter()
-            .find_map(|(k, v)| (*k == key).then_some(*v))
-            .unwrap_or(Self::EMPTY_MAP))
+            .find_map(|(k, v)| (*k == key).then_some(*v)))
+    }
+
+    /// Wraps `map_get`, if the value isn't present, returns the empy map
+    fn map_lookup(&self, addr: HeapAddr, key: Value) -> Result<Value, KartaError> {
+        Ok(self.map_get(addr, key)?.unwrap_or(Self::EMPTY_MAP))
     }
 
     fn as_map(&self, addr: HeapAddr) -> Result<&[(Value, Value)], KartaError> {
@@ -293,6 +298,16 @@ impl<'a> Eval<'a> {
 
             Instr::TestConst { dst, src, value } => {
                 self.store(*dst, self.make_bool(self.load(*src) == *value));
+            }
+
+            Instr::TestHasKey { dst, src, key } => {
+                let present = match self.load(*src) {
+                    Value::Map(addr) => self.heap.map_get(addr, *key)?.is_some(),
+
+                    _ => false, // If not even a map, then store falsey
+                };
+
+                self.store(*dst, self.make_bool(present))
             }
 
             Instr::Jump { target } => self.jump(*target),

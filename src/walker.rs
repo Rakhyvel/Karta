@@ -127,6 +127,12 @@ where
 
         match pattern {
             Pattern::Identifier(_) | Pattern::Int(_) | Pattern::Char(_) | Pattern::Atom(_) => {}
+
+            Pattern::Map(_) => {
+                // for pattern in patterns {
+                //     self.walk_pattern(*pattern)?;
+                // }
+            }
         }
 
         self.visitor.leave_pattern(id)?;
