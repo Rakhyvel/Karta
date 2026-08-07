@@ -652,6 +652,35 @@ in eval "#;
     }
 
     #[test]
+    fn tuple_pattern_match() -> Result<(), KartaError> {
+        let src = r#"let
+    eval (0, 0) = 0
+    eval (0, x) = x
+    eval (1, 0) = 1
+    eval (1, 0, 1) = 2
+    eval _ = 100
+in eval "#;
+
+        for (input, expected) in [
+            ("(0, 0)", 0),
+            ("(0, 200)", 200),
+            ("{0 = 0, 1 = 200}", 200),
+            ("(1, 0)", 1),
+            ("(1, 0, 1)", 2),
+            ("{}", 100),
+            ("4", 100),
+        ] {
+            let mut kctx = KartaContext::new();
+
+            let res = kctx.eval(format!("{src}{input}"))?.as_i64().unwrap();
+
+            assert_eq!(res, expected);
+        }
+
+        Ok(())
+    }
+
+    #[test]
     fn wildcard_match() -> Result<(), KartaError> {
         let src = r#"let
     eval 0 = 100

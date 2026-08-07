@@ -55,6 +55,10 @@ impl PatternHeap {
         self.insert(Pattern::Map(pairs), span)
     }
 
+    pub(crate) fn create_tuple(&mut self, span: Span, elems: Vec<PatternId>) -> PatternId {
+        self.insert(Pattern::Tuple(elems), span)
+    }
+
     /// Retrieves a reference to an Ast for a given ID, if it exists
     pub(crate) fn get(&self, id: PatternId) -> Option<&Pattern> {
         self.patterns.get(id.as_u32() as usize)
@@ -89,5 +93,6 @@ pub enum Pattern {
     Char(char),
     Atom(AtomId),
     Map(Vec<(PatternId, Option<PatternId>)>),
+    Tuple(Vec<PatternId>),
     // TODO: Add more!
 }

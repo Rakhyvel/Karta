@@ -293,9 +293,9 @@ impl<'a> Parser<'a> {
         match self.peek().kind {
             TokenKind::Wildcard => self.parse_pattern_wildcard(),
             TokenKind::Identifier => self.parse_pattern_identifier(),
-            TokenKind::Integer | TokenKind::Char | TokenKind::Atom | TokenKind::LeftBrace => {
-                self.parse_pattern_const()
-            }
+            TokenKind::LeftBrace => self.parse_pattern_map(),
+            TokenKind::LeftParen => self.parse_pattern_parens(),
+            TokenKind::Integer | TokenKind::Char | TokenKind::Atom => self.parse_pattern_const(),
             _ => Err(KartaError {
                 span: self.peek().span,
                 kind: ErrorKind::Unexpected {
@@ -390,7 +390,6 @@ impl<'a> Parser<'a> {
             TokenKind::Integer => self.parse_pattern_integer(),
             TokenKind::Char => self.parse_pattern_char(),
             TokenKind::Atom => self.parse_pattern_atom(),
-            TokenKind::LeftBrace => self.parse_pattern_map(),
             _ => Err(KartaError {
                 span: self.peek().span,
                 kind: ErrorKind::Unexpected {
@@ -431,6 +430,33 @@ impl<'a> Parser<'a> {
             // Set field, no rhs
             Ok((key, None))
         }
+    }
+
+    fn parse_pattern_parens(&mut self) -> Result<PatternId, KartaError> {
+        self.expect(TokenKind::LeftParen)?;
+        let retval = self.parse_pattern_tuple()?;
+        self.expect(TokenKind::RightParen)?;
+        Ok(retval)
+    }
+
+    fn parse_pattern_tuple(&mut self) -> Result<PatternId, KartaError> {
+        let mut terms = vec![];
+
+        let span = self.peek().span;
+
+        if self.accept(TokenKind::RightParen).is_none() {
+            terms.push(self.parse_pattern()?);
+
+            while self.accept(TokenKind::Comma).is_some() {
+                if let TokenKind::RightParen = self.peek().kind {
+                    // Comma accepted above was a trailing comma, break
+                    break;
+                }
+                terms.push(self.parse_pattern()?);
+            }
+        }
+
+        Ok(self.patterns.create_tuple(span, terms))
     }
 
     fn parse_pattern_integer(&mut self) -> Result<PatternId, KartaError> {

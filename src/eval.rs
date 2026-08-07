@@ -319,6 +319,24 @@ impl<'a> Eval<'a> {
                 self.store(*dst, self.make_bool(present))
             }
 
+            Instr::TestTupleLength { dst, src, len } => {
+                let length_fits = match self.load(*src) {
+                    Value::Map(addr) => match self.heap.deref(addr) {
+                        HeapObj::Map(pairs) => {
+                            // check length and contiguity
+                            pairs.len() == *len
+                                && (0..*len)
+                                    .all(|i| pairs.iter().any(|(k, _)| *k == Value::Int(i as i64)))
+                        }
+                        HeapObj::Closure(_, _) => false,
+                    },
+
+                    _ => false, // If not even a map, then store falsey
+                };
+
+                self.store(*dst, self.make_bool(length_fits))
+            }
+
             Instr::Jump { target } => self.jump(*target),
 
             Instr::JumpIfFalse { target, cond } => {

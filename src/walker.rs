@@ -145,6 +145,12 @@ where
                     }
                 }
             }
+
+            Pattern::Tuple(elems) => {
+                for elem in elems {
+                    self.walk_pattern(*elem)?;
+                }
+            }
         }
 
         self.visitor.leave_pattern(id)?;

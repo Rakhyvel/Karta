@@ -7,7 +7,7 @@
     - [x] map patterns
     - [x] wildcards
     - [x] guards
-    - [ ] tuple patterns
+    - [x] tuple patterns
     - [ ] accepts?
     - [ ] map structural equality, nested map keys
     - [ ] list patterns, string patterns

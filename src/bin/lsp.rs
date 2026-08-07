@@ -218,7 +218,7 @@ fn span_to_range(src: &SourceFile, span: Span) -> Range {
 }
 
 fn semantic_kind(kind: SemanticKind) -> Option<(u32, u32)> {
-    const KEYWORD: u32 = 0;
+    const _KEYWORD: u32 = 0;
     const NUMBER: u32 = 1;
     const STRING: u32 = 2;
     const ATOM: u32 = 3;

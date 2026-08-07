@@ -48,6 +48,8 @@ pub enum Instr {
 
     TestHasKey { dst: Slot, src: Slot, key: Value },
 
+    TestTupleLength { dst: Slot, src: Slot, len: usize },
+
     Jump { target: usize },
 
     JumpIfFalse { target: usize, cond: Slot },
@@ -461,6 +463,25 @@ impl<'a> Lowerer<'a> {
 
                 sites
             }
+
+            Pattern::Tuple(elems) => {
+                let mut sites = Vec::new();
+                sites.push(self.lower_test_tuple_len(src, elems.len()));
+
+                for (i, elem) in elems.iter().enumerate() {
+                    let key = Value::Int(i as i64);
+                    let extracted = self.new_slot();
+                    self.emit(Instr::GetKey {
+                        // TODO: I think we eventually want this to just be Apply
+                        dst: extracted,
+                        src,
+                        key,
+                    });
+                    sites.extend(self.lower_pattern_match(*elem, extracted));
+                }
+
+                sites
+            }
         }
     }
 
@@ -483,6 +504,19 @@ impl<'a> Lowerer<'a> {
             dst: cond,
             src,
             key,
+        });
+        self.emit_patchable(Instr::JumpIfFalse {
+            target: usize::MAX,
+            cond,
+        })
+    }
+
+    fn lower_test_tuple_len(&mut self, src: Slot, len: usize) -> PatchSite {
+        let cond = self.new_slot();
+        self.emit(Instr::TestTupleLength {
+            dst: cond,
+            src,
+            len,
         });
         self.emit_patchable(Instr::JumpIfFalse {
             target: usize::MAX,
