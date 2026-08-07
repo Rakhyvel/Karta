@@ -624,6 +624,58 @@ in eval "#;
         Ok(())
     }
 
+    #[test]
+    fn map_pattern_match() -> Result<(), KartaError> {
+        let src = r#"let
+    eval {.a = 1} = 400
+    eval {.a = {.b = x}} = x
+    eval {.a = x} = x
+    eval n = 300
+in eval "#;
+
+        for (input, expected) in [
+            ("{.a = 1}", 400),
+            ("{.a = 200}", 200),
+            ("{.a = {.b = 500}}", 500),
+            ("{}", 300),
+            ("0", 300),
+            ("4", 300),
+        ] {
+            let mut kctx = KartaContext::new();
+
+            let res = kctx.eval(format!("{src}{input}"))?.as_i64().unwrap();
+
+            assert_eq!(res, expected);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn wildcard_match() -> Result<(), KartaError> {
+        let src = r#"let
+    eval 0 = 100
+    eval {.a = x} = x
+    eval _ = 0
+in eval "#;
+
+        for (input, expected) in [
+            ("{.a = 1}", 1),
+            ("{.b = 200}", 0),
+            ("{}", 0),
+            ("0", 100),
+            ("4", 0),
+        ] {
+            let mut kctx = KartaContext::new();
+
+            let res = kctx.eval(format!("{src}{input}"))?.as_i64().unwrap();
+
+            assert_eq!(res, expected);
+        }
+
+        Ok(())
+    }
+
     #[ignore = "imports not impld yet"]
     #[test]
     fn import() -> Result<(), KartaError> {

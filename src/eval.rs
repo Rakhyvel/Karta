@@ -296,6 +296,15 @@ impl<'a> Eval<'a> {
                 self.apply(*dst, lhs, rhs)?;
             }
 
+            Instr::GetKey { dst, src, key } => {
+                let value = match self.load(*src) {
+                    Value::Map(addr) => self.heap.map_get(addr, *key)?.unwrap_or(Heap::EMPTY_MAP),
+
+                    _ => Heap::EMPTY_MAP, // If not even a map, then store falsey
+                };
+                self.store(*dst, value);
+            }
+
             Instr::TestConst { dst, src, value } => {
                 self.store(*dst, self.make_bool(self.load(*src) == *value));
             }

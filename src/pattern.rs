@@ -27,6 +27,10 @@ impl PatternHeap {
         retval
     }
 
+    pub(crate) fn create_wildcard(&mut self, span: Span) -> PatternId {
+        self.insert(Pattern::Wildcard, span)
+    }
+
     pub(crate) fn create_identifier(&mut self, span: Span, identifier: SymbolId) -> PatternId {
         self.insert(Pattern::Identifier(identifier), span)
     }
@@ -43,8 +47,12 @@ impl PatternHeap {
         self.insert(Pattern::Atom(id), span)
     }
 
-    pub(crate) fn create_map(&mut self, span: Span, keys: Vec<PatternId>) -> PatternId {
-        self.insert(Pattern::Map(keys), span)
+    pub(crate) fn create_map(
+        &mut self,
+        span: Span,
+        pairs: Vec<(PatternId, Option<PatternId>)>,
+    ) -> PatternId {
+        self.insert(Pattern::Map(pairs), span)
     }
 
     /// Retrieves a reference to an Ast for a given ID, if it exists
@@ -75,10 +83,11 @@ impl PatternId {
 
 #[derive(Debug, Clone)]
 pub enum Pattern {
+    Wildcard,
     Identifier(SymbolId),
     Int(i64),
     Char(char),
     Atom(AtomId),
-    Map(Vec<PatternId>),
+    Map(Vec<(PatternId, Option<PatternId>)>),
     // TODO: Add more!
 }

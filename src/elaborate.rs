@@ -198,7 +198,11 @@ impl<'a> AstVisitor for Declare<'a> {
         let pattern = self.patterns.get(id).expect("pattern should exist");
 
         match pattern {
-            Pattern::Int(_) | Pattern::Char(_) | Pattern::Atom(_) | Pattern::Map(_) => {}
+            Pattern::Wildcard
+            | Pattern::Int(_)
+            | Pattern::Char(_)
+            | Pattern::Atom(_)
+            | Pattern::Map(_) => {}
 
             Pattern::Identifier(name) => {
                 let param_def_id = self.elab.defs.create_def(0, DefKind::Parameter, None);

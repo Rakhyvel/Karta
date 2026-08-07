@@ -42,6 +42,8 @@ pub enum Instr {
 
     Apply { dst: Slot, lhs: Slot, rhs: Slot },
 
+    GetKey { dst: Slot, src: Slot, key: Value },
+
     TestConst { dst: Slot, src: Slot, value: Value },
 
     TestHasKey { dst: Slot, src: Slot, key: Value },
@@ -382,15 +384,7 @@ impl<'a> Lowerer<'a> {
             // emit tests, jump to next clause on failure
             let mut fail_sites = Vec::new();
             for (pat, anon_param) in pats.iter().zip(&anon_params) {
-                fail_sites.extend(self.lower_pattern_test(*pat, *anon_param));
-            }
-
-            // destructure the anonymous param
-            for (pat, anon_param) in pats.iter().zip(&anon_params) {
-                // TODO: Other kinds of destructuring
-                if let Some(def) = self.elab.pattern_define(*pat) {
-                    self.top_fn_mut().scope.insert(def, *anon_param);
-                }
+                fail_sites.extend(self.lower_pattern_match(*pat, *anon_param));
             }
 
             let body = self.lower_ast(rhs);
@@ -417,32 +411,43 @@ impl<'a> Lowerer<'a> {
         result
     }
 
-    fn lower_pattern_test(&mut self, pat: PatternId, anon_param: Slot) -> Vec<PatchSite> {
+    fn lower_pattern_match(&mut self, pat: PatternId, src: Slot) -> Vec<PatchSite> {
         match self.patterns.get(pat).expect("invalid pattern id") {
-            Pattern::Identifier(_) => vec![], // irrefutable babey
-            Pattern::Int(n) => vec![self.lower_pattern_const_test(anon_param, Value::Int(*n))],
-            Pattern::Char(c) => vec![self.lower_pattern_const_test(anon_param, Value::Char(*c))],
-            Pattern::Atom(id) => vec![self.lower_pattern_const_test(anon_param, Value::Atom(*id))],
-            Pattern::Map(pats) => {
-                let keys: Vec<Value> = pats
+            Pattern::Wildcard => vec![], // irrefutable, but defines nothing
+
+            Pattern::Identifier(_) => {
+                let def = self.elab.pattern_define(pat).expect("identifier defines");
+                self.top_fn_mut().scope.insert(def, src);
+                vec![]
+            }
+
+            Pattern::Int(n) => vec![self.lower_pattern_const_test(src, Value::Int(*n))],
+            Pattern::Char(c) => vec![self.lower_pattern_const_test(src, Value::Char(*c))],
+            Pattern::Atom(id) => vec![self.lower_pattern_const_test(src, Value::Atom(*id))],
+
+            Pattern::Map(pairs) => {
+                let pairs: Vec<(Value, Option<PatternId>)> = pairs
                     .iter()
-                    .map(|pat| self.pattern_const(*pat).expect("TODO: nested map patterns")) // non-const already got dropped, should be all Some
+                    .map(|(k, v)| (self.pattern_const(*k).expect("const key"), *v))
                     .collect();
 
-                keys.into_iter()
-                    .map(|key| {
-                        let cond = self.new_slot();
-                        self.emit(Instr::TestHasKey {
-                            dst: cond,
-                            src: anon_param,
+                let mut sites = Vec::new();
+                for (key, value_pat) in pairs {
+                    sites.push(self.lower_has_key_test(src, key));
+
+                    if let Some(value_pat) = value_pat {
+                        let extracted = self.new_slot();
+                        self.emit(Instr::GetKey {
+                            // TODO: I think we eventually want this to just be Apply
+                            dst: extracted,
+                            src,
                             key,
                         });
-                        self.emit_patchable(Instr::JumpIfFalse {
-                            target: usize::MAX,
-                            cond,
-                        })
-                    })
-                    .collect()
+                        sites.extend(self.lower_pattern_match(value_pat, extracted));
+                    }
+                }
+
+                sites
             }
         }
     }
@@ -453,6 +458,19 @@ impl<'a> Lowerer<'a> {
             dst: cond,
             src: anon_param,
             value,
+        });
+        self.emit_patchable(Instr::JumpIfFalse {
+            target: usize::MAX,
+            cond,
+        })
+    }
+
+    fn lower_has_key_test(&mut self, src: Slot, key: Value) -> PatchSite {
+        let cond = self.new_slot();
+        self.emit(Instr::TestHasKey {
+            dst: cond,
+            src,
+            key,
         });
         self.emit_patchable(Instr::JumpIfFalse {
             target: usize::MAX,

@@ -126,12 +126,19 @@ where
         let pattern = self.patterns.get(id).unwrap();
 
         match pattern {
-            Pattern::Identifier(_) | Pattern::Int(_) | Pattern::Char(_) | Pattern::Atom(_) => {}
+            Pattern::Wildcard
+            | Pattern::Identifier(_)
+            | Pattern::Int(_)
+            | Pattern::Char(_)
+            | Pattern::Atom(_) => {}
 
-            Pattern::Map(_) => {
-                // for pattern in patterns {
-                //     self.walk_pattern(*pattern)?;
-                // }
+            Pattern::Map(patterns) => {
+                for (key, value) in patterns {
+                    self.walk_pattern(*key)?;
+                    if let Some(value) = value {
+                        self.walk_pattern(*value)?;
+                    }
+                }
             }
         }
 
