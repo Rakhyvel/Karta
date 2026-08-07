@@ -142,13 +142,14 @@ fn semantic_kind(kind: TokenKind) -> SemanticKind {
         | TokenKind::If
         | TokenKind::Then
         | TokenKind::Elif
-        | TokenKind::Else => SemanticKind::Keyword,
+        | TokenKind::Else
+        | TokenKind::When => SemanticKind::Keyword,
 
         TokenKind::Integer | TokenKind::Float => SemanticKind::Number,
         TokenKind::String | TokenKind::Char => SemanticKind::String,
         TokenKind::Atom => SemanticKind::Atom,
         TokenKind::Builtin => SemanticKind::Builtin,
-        TokenKind::Identifier => SemanticKind::Variable,
+        TokenKind::Identifier | TokenKind::Wildcard => SemanticKind::Variable,
 
         TokenKind::Arrow | TokenKind::Assign | TokenKind::Backslash => SemanticKind::Operator,
 

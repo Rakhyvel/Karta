@@ -374,17 +374,29 @@ impl<'a> Lowerer<'a> {
 
         for clause in clauses {
             let Some(Ast::Binding {
-                params: pats, rhs, ..
+                params: pats,
+                rhs,
+                guard,
+                ..
             }) = self.asts.get(*clause)
             else {
                 unreachable!("clause wasn't a binding")
             };
-            let (pats, rhs) = (pats.clone(), *rhs);
+            let (pats, rhs) = (pats, *rhs);
 
             // emit tests, jump to next clause on failure
             let mut fail_sites = Vec::new();
             for (pat, anon_param) in pats.iter().zip(&anon_params) {
                 fail_sites.extend(self.lower_pattern_match(*pat, *anon_param));
+            }
+
+            // do the guard
+            if let Some(guard) = guard {
+                let guard_cond = self.lower_ast(*guard);
+                fail_sites.push(self.emit_patchable(Instr::JumpIfFalse {
+                    target: usize::MAX,
+                    cond: guard_cond,
+                }))
             }
 
             let body = self.lower_ast(rhs);

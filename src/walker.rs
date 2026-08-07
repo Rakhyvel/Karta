@@ -69,9 +69,14 @@ where
                 }
             }
 
-            Ast::Binding { params, rhs, .. } => {
+            Ast::Binding {
+                params, rhs, guard, ..
+            } => {
                 for param in params {
                     self.walk_pattern(*param)?;
+                }
+                if let Some(guard) = guard {
+                    self.walk_ast(*guard)?;
                 }
                 self.walk_ast(*rhs)?;
             }

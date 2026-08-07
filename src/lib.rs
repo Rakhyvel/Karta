@@ -676,6 +676,24 @@ in eval "#;
         Ok(())
     }
 
+    #[test]
+    fn match_guard() -> Result<(), KartaError> {
+        let src = r#"let
+    eval x when @lsr(x, 5) = 1
+    eval _ = 0
+in eval "#;
+
+        for (input, expected) in [("0", 1), ("4", 1), ("5", 0), ("50", 0)] {
+            let mut kctx = KartaContext::new();
+
+            let res = kctx.eval(format!("{src}{input}"))?.as_i64().unwrap();
+
+            assert_eq!(res, expected);
+        }
+
+        Ok(())
+    }
+
     #[ignore = "imports not impld yet"]
     #[test]
     fn import() -> Result<(), KartaError> {

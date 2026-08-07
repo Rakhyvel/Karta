@@ -297,6 +297,7 @@ pub enum TokenKind {
     Then,
     Elif,
     Else,
+    When,
     Dedent,
     Indent,
     EndOfFile,
@@ -324,6 +325,7 @@ impl TokenKind {
             "then" => TokenKind::Then,
             "elif" => TokenKind::Elif,
             "else" => TokenKind::Else,
+            "when" => TokenKind::When,
             _ => match str.chars().next() {
                 Some('.') => TokenKind::Atom,
                 Some(c) if c.is_ascii_digit() => TokenKind::Integer,

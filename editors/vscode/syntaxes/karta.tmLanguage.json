@@ -3,37 +3,57 @@
   "name": "Karta",
   "scopeName": "source.karta",
   "patterns": [
-    { "include": "#comment" },
-    { "include": "#string" },
-    { "include": "#char" },
-    { "include": "#number" },
-    { "include": "#atom" },
-    { "include": "#builtin" },
-    { "include": "#keyword" },
-    { "include": "#lambda" },
-    { "include": "#operator" },
-    { "include": "#punctuation" }
+    {
+      "include": "#comment"
+    },
+    {
+      "include": "#string"
+    },
+    {
+      "include": "#char"
+    },
+    {
+      "include": "#number"
+    },
+    {
+      "include": "#atom"
+    },
+    {
+      "include": "#builtin"
+    },
+    {
+      "include": "#keyword"
+    },
+    {
+      "include": "#lambda"
+    },
+    {
+      "include": "#operator"
+    },
+    {
+      "include": "#punctuation"
+    }
   ],
   "repository": {
     "comment": {
       "name": "comment.line.semicolon.karta",
       "match": ";.*$"
     },
-
     "string": {
       "name": "string.quoted.double.karta",
       "begin": "\"",
       "end": "\"",
       "patterns": [
-        { "name": "constant.character.escape.karta", "match": "\\\\." }
+        {
+          "name": "constant.character.escape.karta",
+          "match": "\\\\."
+        }
       ]
     },
-
     "char": {
       "name": "string.quoted.single.karta",
       "match": "'([^'\\\\]|\\\\.)'"
     },
-
     "number": {
       "patterns": [
         {
@@ -46,32 +66,34 @@
         }
       ]
     },
-
     "atom": {
       "name": "constant.language.atom.karta",
       "match": "(?<![\\w'?-])\\.[A-Za-z_][\\w'?-]*"
     },
-
     "builtin": {
       "name": "support.function.builtin.karta",
       "match": "@[A-Za-z_][\\w'?-]*"
     },
-
     "keyword": {
-      "name": "keyword.control.karta",
-      "match": "(?<![\\w'?-])(let|in|if|then|elif|else)(?![\\w'?-])"
+      "patterns": [
+        {
+          "name": "keyword.control.karta",
+          "match": "(?<![\\w'?-])(if|then|elif|else|when)(?![\\w'?-])"
+        },
+        {
+          "name": "storage.type.karta",
+          "match": "(?<![\\w'?-])(let|in)(?![\\w'?-])"
+        }
+      ]
     },
-
     "lambda": {
       "name": "keyword.operator.lambda.karta",
       "match": "\\\\"
     },
-
     "operator": {
       "name": "keyword.operator.karta",
       "match": "(->|[=+\\-*/%<>!&|~^]+)"
     },
-
     "punctuation": {
       "patterns": [
         {

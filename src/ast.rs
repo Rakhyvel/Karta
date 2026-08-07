@@ -60,10 +60,19 @@ impl AstHeap {
         &mut self,
         span: Span,
         name: SymbolId,
+        guard: Option<AstId>,
         params: Vec<PatternId>,
         rhs: AstId,
     ) -> AstId {
-        self.insert(Ast::Binding { name, params, rhs }, span)
+        self.insert(
+            Ast::Binding {
+                name,
+                params,
+                guard,
+                rhs,
+            },
+            span,
+        )
     }
 
     /// Inserts a map Ast, and returns its ID
@@ -173,6 +182,7 @@ pub(crate) enum Ast {
     /// A binding
     Binding {
         name: SymbolId,
+        guard: Option<AstId>,
         params: Vec<PatternId>,
         rhs: AstId,
     },

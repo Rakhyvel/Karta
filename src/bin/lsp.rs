@@ -231,7 +231,7 @@ fn semantic_kind(kind: SemanticKind) -> Option<(u32, u32)> {
     const READONLY: u32 = 1 << 1;
 
     Some(match kind {
-        SemanticKind::Keyword => (KEYWORD, 0),
+        SemanticKind::Keyword => return None, // Keep the textmate grammar!
 
         SemanticKind::Number => (NUMBER, 0),
         SemanticKind::String => (STRING, 0),

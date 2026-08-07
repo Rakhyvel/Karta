@@ -165,7 +165,17 @@ impl<'a> Parser<'a> {
         // Parse patterns into a list of args before the `=`
         let params: Vec<PatternId> = self.parse_pattern_list()?;
 
+        let guard: Option<AstId> = if self.accept(TokenKind::When).is_some() {
+            Some(self.let_in_expr().unwrap_or_else(|e| {
+                self.errors.push(e);
+                self.asts.create_error(self.peek().span)
+            }))
+        } else {
+            None
+        };
+
         // Parse the RHS after the `=`
+        self.expect(TokenKind::Assign)?;
         let rhs_value = self.let_in_expr().unwrap_or_else(|e| {
             self.errors.push(e);
             self.asts.create_error(self.peek().span)
@@ -173,15 +183,20 @@ impl<'a> Parser<'a> {
         self.accept_newlines();
 
         // Create the binding
-        Ok(self.asts.create_binding(name_span, name, params, rhs_value))
+        Ok(self
+            .asts
+            .create_binding(name_span, name, guard, params, rhs_value))
     }
 
     /// Parses binding params in between the binding name and its `=` sign
     fn parse_pattern_list(&mut self) -> Result<Vec<PatternId>, KartaError> {
         let mut params = Vec::new();
         // Keep trying to parse exprs until you hit an `=` sign
-        while self.accept(TokenKind::Assign).is_none() {
-            params.push(self.parse_pattern()?);
+        loop {
+            match self.peek().kind {
+                TokenKind::Assign | TokenKind::When => break, // These signify the end of the param list
+                _ => params.push(self.parse_pattern()?),
+            }
         }
         Ok(params)
     }
