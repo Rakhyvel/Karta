@@ -723,6 +723,45 @@ in eval "#;
         Ok(())
     }
 
+    #[test]
+    fn accepts() -> Result<(), KartaError> {
+        let src = r#"let
+    eval 0 = 0
+    eval 2 = 0
+    eval(x, y) = 2
+    eval(x, y, z) = 3
+
+    eval2 x 0 = 0
+
+    my-set = {.a, .b}
+
+in @accepts?"#;
+
+        for (input, expected) in [
+            ("(eval, 0)", true),
+            ("(eval, 1)", false),
+            ("(eval, 2)", true),
+            ("(eval, 3)", false),
+            ("(eval, (1, 2))", true),
+            ("(eval, (1, 2, 3))", true),
+            ("(eval, (1, 2, 3, 4))", false),
+            ("(eval2, 0)", true),
+            ("(eval2 1, 0)", true),
+            ("(eval2 1, 1)", false),
+            ("(my-set, .a)", true),
+            ("(my-set, .b)", true),
+            ("(my-set, .c)", false),
+        ] {
+            let mut kctx = KartaContext::new();
+
+            let res = kctx.eval(format!("{src}{input}"))?.is_truthy();
+
+            assert_eq!(res, expected);
+        }
+
+        Ok(())
+    }
+
     #[ignore = "imports not impld yet"]
     #[test]
     fn import() -> Result<(), KartaError> {

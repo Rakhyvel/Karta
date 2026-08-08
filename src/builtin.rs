@@ -34,4 +34,5 @@ builtins! {
     And => "@and",
     Or => "@or",
     Not => "@not",
+    Accepts => "@accepts?",
 }

@@ -16,6 +16,14 @@ pub struct Eval<'a> {
     result: Value,
 }
 
+#[derive(Clone, Copy)]
+enum EvalMode {
+    /// We want to eval this function fully, and run its body
+    Normal,
+    /// We just want to see if this function accepts the args
+    Probe,
+}
+
 struct Frame {
     /// Shared-ptr to the corresponding Function's instructions
     instrs: Rc<[Instr]>,
@@ -25,10 +33,12 @@ struct Frame {
     ip: usize,
     /// Relative to the _CALLER_'s frame
     return_slot: Slot,
+    /// Whether we're fully eval-ing or just probing
+    mode: EvalMode,
 }
 
 impl Frame {
-    fn new(func: &Function, arg: Value, return_slot: Slot) -> Self {
+    fn new(func: &Function, arg: Value, return_slot: Slot, mode: EvalMode) -> Self {
         let mut slots = vec![Value::Undefined; func.slots_used as usize];
         slots[0] = arg;
 
@@ -37,6 +47,7 @@ impl Frame {
             slots,
             ip: 0,
             return_slot,
+            mode,
         }
     }
 
@@ -227,7 +238,12 @@ impl<'a> Eval<'a> {
         let function = &program.funcs[entry.as_usize()];
 
         Self {
-            frame_stack: vec![Frame::new(function, Value::Undefined, Slot::new(0))],
+            frame_stack: vec![Frame::new(
+                function,
+                Value::Undefined,
+                Slot::new(0),
+                EvalMode::Normal,
+            )],
             program,
             heap,
             string_literal_table,
@@ -293,16 +309,12 @@ impl<'a> Eval<'a> {
                 let lhs = self.load(*lhs);
                 let rhs = self.load(*rhs);
 
-                self.apply(*dst, lhs, rhs)?;
+                self.apply(*dst, lhs, rhs, EvalMode::Normal)?;
             }
 
             Instr::GetKey { dst, src, key } => {
-                let value = match self.load(*src) {
-                    Value::Map(addr) => self.heap.map_get(addr, *key)?.unwrap_or(Heap::EMPTY_MAP),
-
-                    _ => Heap::EMPTY_MAP, // If not even a map, then store falsey
-                };
-                self.store(*dst, value);
+                let src_val = self.load(*src);
+                self.apply(*dst, src_val, *key, EvalMode::Normal)?;
             }
 
             Instr::TestConst { dst, src, value } => {
@@ -310,13 +322,13 @@ impl<'a> Eval<'a> {
             }
 
             Instr::TestHasKey { dst, src, key } => {
-                let present = match self.load(*src) {
-                    Value::Map(addr) => self.heap.map_get(addr, *key)?.is_some(),
+                let src_val = self.load(*src);
+                match self.apply(*dst, src_val, *key, EvalMode::Probe) {
+                    Ok(_) => {}
 
-                    _ => false, // If not even a map, then store falsey
-                };
-
-                self.store(*dst, self.make_bool(present))
+                    // If applying failed (like trying to apply to a non-applicable) then store false, it doesn't have the key
+                    Err(_) => self.store(*dst, Heap::EMPTY_MAP),
+                }
             }
 
             Instr::TestTupleLength { dst, src, len } => {
@@ -346,13 +358,34 @@ impl<'a> Eval<'a> {
                 }
             }
 
-            Instr::Ret { src } => {
-                let frame = self.frame_stack.pop().unwrap();
-                let retval = frame.load(*src);
-                match self.frame_stack.last_mut() {
-                    Some(caller) => caller.store(frame.return_slot, retval),
-                    None => self.result = retval,
+            Instr::Accept => {
+                match self.mode() {
+                    // Normal eval, clause acceptance is a no-op
+                    EvalMode::Normal => {}
+
+                    // Probing for acceptance and we got it, return .t
+                    EvalMode::Probe => self.ret(Value::Atom(AtomTable::TRUE)),
                 }
+            }
+
+            Instr::Reject => {
+                match self.mode() {
+                    // Attempting to eval normally, but no clause accepted. Panic
+                    EvalMode::Normal => {
+                        return Err(KartaError {
+                            span: Span { start: 67, end: 67 },
+                            kind: ErrorKind::NonTotal,
+                        })
+                    }
+
+                    // Just checking if this any clause of this function accepted, none did. Return `{}`
+                    EvalMode::Probe => self.ret(Heap::EMPTY_MAP),
+                }
+            }
+
+            Instr::Ret { src } => {
+                let retval = self.load(*src);
+                self.ret(retval);
             }
         };
         Ok(())
@@ -370,6 +403,18 @@ impl<'a> Eval<'a> {
         self.frame_stack.last_mut().unwrap().ip = ip;
     }
 
+    fn ret(&mut self, retval: Value) {
+        let frame = self.frame_stack.pop().unwrap();
+        match self.frame_stack.last_mut() {
+            Some(caller) => caller.store(frame.return_slot, retval),
+            None => self.result = retval,
+        }
+    }
+
+    fn mode(&self) -> EvalMode {
+        self.frame_stack.last().unwrap().mode
+    }
+
     fn capture_values(&self, func_id: FunctionId) -> Vec<Value> {
         self.program.funcs[func_id.as_usize()]
             .captures
@@ -378,16 +423,29 @@ impl<'a> Eval<'a> {
             .collect()
     }
 
-    fn apply(&mut self, dst: Slot, lhs: Value, rhs: Value) -> Result<(), KartaError> {
+    fn apply(
+        &mut self,
+        dst: Slot,
+        lhs: Value,
+        rhs: Value,
+        mode: EvalMode,
+    ) -> Result<(), KartaError> {
         match lhs {
-            Value::Map(addr) => self.store(dst, self.heap.map_lookup(addr, rhs)?),
+            Value::Map(addr) => match mode {
+                EvalMode::Normal => self.store(dst, self.heap.map_lookup(addr, rhs)?),
+                EvalMode::Probe => {
+                    let res = self.heap.map_get(addr, rhs)?.is_some();
+                    self.store(dst, self.make_bool(res))
+                }
+            },
+
             Value::Closure(addr) => {
                 let HeapObj::Closure(func_id, values) = self.heap.deref(addr) else {
                     unreachable!("closure value pointed at {:?}", addr)
                 };
 
                 let func = &self.program.funcs[func_id.as_usize()];
-                let mut frame = Frame::new(func, rhs, dst);
+                let mut frame = Frame::new(func, rhs, dst, mode);
 
                 for (i, (capture_dst, _)) in func.captures.iter().enumerate() {
                     frame.store(*capture_dst, values[i]);
@@ -395,7 +453,24 @@ impl<'a> Eval<'a> {
 
                 self.frame_stack.push(frame);
             }
-            Value::Builtin(builtin) => self.store(dst, self.call_builtin(builtin, rhs)?),
+
+            Value::Builtin(Builtin::Accepts) => {
+                let (f, x) = self.get_pair(rhs)?;
+                match mode {
+                    EvalMode::Normal => self.apply(dst, f, x, EvalMode::Probe)?,
+
+                    EvalMode::Probe => self.store(dst, self.make_bool(true)),
+                }
+            }
+
+            Value::Builtin(builtin) => match mode {
+                EvalMode::Normal => self.store(dst, self.call_builtin(builtin, rhs)?),
+                EvalMode::Probe => {
+                    let res = self.call_builtin(builtin, rhs).is_ok();
+                    self.store(dst, self.make_bool(res))
+                }
+            },
+
             _ => {
                 return Err(KartaError {
                     span: Span { start: 67, end: 67 },
@@ -474,6 +549,7 @@ impl<'a> Eval<'a> {
             Builtin::And => todo!("@and"),
             Builtin::Or => todo!("@or"),
             Builtin::Not => todo!("@not"),
+            Builtin::Accepts => unreachable!("intercepted in apply"),
         }
     }
 

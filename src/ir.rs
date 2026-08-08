@@ -9,6 +9,7 @@ use crate::{
     scope::DefId,
 };
 
+#[derive(Debug)]
 pub struct Function {
     pub instructions: Rc<[Instr]>,
     pub slots_used: u32,
@@ -28,33 +29,83 @@ impl FunctionId {
 
 #[derive(Debug)]
 pub enum Instr {
-    Const { dst: Slot, value: Value },
+    Const {
+        dst: Slot,
+        value: Value,
+    },
 
-    Move { dst: Slot, src: Slot },
+    Move {
+        dst: Slot,
+        src: Slot,
+    },
 
-    MakeString { dst: Slot, id: StringLiteralId },
+    MakeString {
+        dst: Slot,
+        id: StringLiteralId,
+    },
 
-    MakeMap { dst: Slot, pairs: Vec<(Slot, Slot)> },
+    MakeMap {
+        dst: Slot,
+        pairs: Vec<(Slot, Slot)>,
+    },
 
-    MakeClosure { dst: Slot, func_id: FunctionId },
+    MakeClosure {
+        dst: Slot,
+        func_id: FunctionId,
+    },
 
-    FillCaptures { slot: Slot },
+    FillCaptures {
+        slot: Slot,
+    },
 
-    Apply { dst: Slot, lhs: Slot, rhs: Slot },
+    Apply {
+        dst: Slot,
+        lhs: Slot,
+        rhs: Slot,
+    },
 
-    GetKey { dst: Slot, src: Slot, key: Value },
+    GetKey {
+        dst: Slot,
+        src: Slot,
+        key: Value,
+    },
 
-    TestConst { dst: Slot, src: Slot, value: Value },
+    TestConst {
+        dst: Slot,
+        src: Slot,
+        value: Value,
+    },
 
-    TestHasKey { dst: Slot, src: Slot, key: Value },
+    TestHasKey {
+        dst: Slot,
+        src: Slot,
+        key: Value,
+    },
 
-    TestTupleLength { dst: Slot, src: Slot, len: usize },
+    TestTupleLength {
+        dst: Slot,
+        src: Slot,
+        len: usize,
+    },
 
-    Jump { target: usize },
+    Jump {
+        target: usize,
+    },
 
-    JumpIfFalse { target: usize, cond: Slot },
+    JumpIfFalse {
+        target: usize,
+        cond: Slot,
+    },
 
-    Ret { src: Slot },
+    /// Function accepts the arg for one of its clauses, no-op in normal eval mode
+    Accept,
+
+    /// Function rejects the arg for all clauses, panic in normal eval mode
+    Reject,
+
+    Ret {
+        src: Slot,
+    },
 }
 
 #[must_use]
@@ -135,6 +186,7 @@ impl HeapAddr {
     }
 }
 
+#[derive(Debug)]
 pub struct Program {
     pub funcs: Vec<Function>,
     pub entry: FunctionId,
@@ -285,7 +337,10 @@ impl<'a> Lowerer<'a> {
                     .elab
                     .pattern_define(*arg)
                     .expect("TODO: support lambda patterns");
-                self.lower_anon_lambda(def, |this| this.lower_ast(*body))
+                self.lower_anon_lambda(def, |this| {
+                    this.emit(Instr::Accept); // lambdas always accept (TODO: lambda patterns)
+                    this.lower_ast(*body)
+                })
             }
 
             Ast::If(conds, else_body) => {
@@ -384,7 +439,6 @@ impl<'a> Lowerer<'a> {
             else {
                 unreachable!("clause wasn't a binding")
             };
-            let (pats, rhs) = (pats, *rhs);
 
             // emit tests, jump to next clause on failure
             let mut fail_sites = Vec::new();
@@ -401,7 +455,9 @@ impl<'a> Lowerer<'a> {
                 }))
             }
 
-            let body = self.lower_ast(rhs);
+            self.emit(Instr::Accept); // this clause accepts
+
+            let body = self.lower_ast(*rhs);
             self.emit(Instr::Move {
                 dst: result,
                 src: body,
@@ -413,10 +469,7 @@ impl<'a> Lowerer<'a> {
             }
         }
 
-        self.emit(Instr::MakeMap {
-            dst: result,
-            pairs: vec![],
-        }); // empty map if function is non-total
+        self.emit(Instr::Reject); // non-totality
 
         for site in end_sites {
             self.patch_here(site);
@@ -435,9 +488,10 @@ impl<'a> Lowerer<'a> {
                 vec![]
             }
 
-            Pattern::Int(n) => vec![self.lower_pattern_const_test(src, Value::Int(*n))],
-            Pattern::Char(c) => vec![self.lower_pattern_const_test(src, Value::Char(*c))],
-            Pattern::Atom(id) => vec![self.lower_pattern_const_test(src, Value::Atom(*id))],
+            Pattern::Int(_) | Pattern::Char(_) | Pattern::Atom(_) => {
+                let value = self.pattern_const(pat).expect("const pattern");
+                vec![self.lower_test_const(src, value)]
+            }
 
             Pattern::Map(pairs) => {
                 let pairs: Vec<(Value, Option<PatternId>)> = pairs
@@ -447,16 +501,10 @@ impl<'a> Lowerer<'a> {
 
                 let mut sites = Vec::new();
                 for (key, value_pat) in pairs {
-                    sites.push(self.lower_has_key_test(src, key));
+                    sites.push(self.lower_test_has_key(src, key));
 
                     if let Some(value_pat) = value_pat {
-                        let extracted = self.new_slot();
-                        self.emit(Instr::GetKey {
-                            // TODO: I think we eventually want this to just be Apply
-                            dst: extracted,
-                            src,
-                            key,
-                        });
+                        let extracted = self.lower_get_key(src, key);
                         sites.extend(self.lower_pattern_match(value_pat, extracted));
                     }
                 }
@@ -470,13 +518,7 @@ impl<'a> Lowerer<'a> {
 
                 for (i, elem) in elems.iter().enumerate() {
                     let key = Value::Int(i as i64);
-                    let extracted = self.new_slot();
-                    self.emit(Instr::GetKey {
-                        // TODO: I think we eventually want this to just be Apply
-                        dst: extracted,
-                        src,
-                        key,
-                    });
+                    let extracted = self.lower_get_key(src, key);
                     sites.extend(self.lower_pattern_match(*elem, extracted));
                 }
 
@@ -485,43 +527,47 @@ impl<'a> Lowerer<'a> {
         }
     }
 
-    fn lower_pattern_const_test(&mut self, anon_param: Slot, value: Value) -> PatchSite {
+    fn lower_test(&mut self, make: impl FnOnce(Slot) -> Instr) -> PatchSite {
         let cond = self.new_slot();
-        self.emit(Instr::TestConst {
-            dst: cond,
-            src: anon_param,
-            value,
-        });
+        self.emit(make(cond));
         self.emit_patchable(Instr::JumpIfFalse {
             target: usize::MAX,
             cond,
         })
     }
 
-    fn lower_has_key_test(&mut self, src: Slot, key: Value) -> PatchSite {
-        let cond = self.new_slot();
-        self.emit(Instr::TestHasKey {
+    fn lower_test_const(&mut self, anon_param: Slot, value: Value) -> PatchSite {
+        self.lower_test(|cond| Instr::TestConst {
+            dst: cond,
+            src: anon_param,
+            value,
+        })
+    }
+
+    fn lower_test_has_key(&mut self, src: Slot, key: Value) -> PatchSite {
+        self.lower_test(|cond| Instr::TestHasKey {
             dst: cond,
             src,
             key,
-        });
-        self.emit_patchable(Instr::JumpIfFalse {
-            target: usize::MAX,
-            cond,
         })
     }
 
     fn lower_test_tuple_len(&mut self, src: Slot, len: usize) -> PatchSite {
-        let cond = self.new_slot();
-        self.emit(Instr::TestTupleLength {
+        self.lower_test(|cond| Instr::TestTupleLength {
             dst: cond,
             src,
             len,
-        });
-        self.emit_patchable(Instr::JumpIfFalse {
-            target: usize::MAX,
-            cond,
         })
+    }
+
+    fn lower_get_key(&mut self, src: Slot, key: Value) -> Slot {
+        let extracted = self.new_slot();
+        self.emit(Instr::GetKey {
+            dst: extracted,
+            src,
+            key,
+        });
+        extracted
     }
 
     fn pattern_const(&self, pat: PatternId) -> Option<Value> {

@@ -18,6 +18,18 @@ pub enum ErrorKind {
     UnknownBuiltin {
         name: String,
     },
+    Unexpected {
+        expected: String,
+        got: String,
+    },
+    UnresolvedIdentifier {
+        symbol_name: String,
+    },
+    QuotedEof,
+
+    // TODO: We may want a separate interpreter error enum
+    DivisionByZero,
+    NonTotal,
     CannotUnop {
         verb: &'static str,
         expr: String,
@@ -27,15 +39,6 @@ pub enum ErrorKind {
         lhs: String,
         rhs: String,
     },
-    Unexpected {
-        expected: String,
-        got: String,
-    },
-    UnresolvedIdentifier {
-        symbol_name: String,
-    },
-    DivisionByZero,
-    QuotedEof,
 }
 
 impl Display for ErrorKind {
@@ -45,14 +48,15 @@ impl Display for ErrorKind {
             ErrorKind::ParseIntError(parse_int_error) => write!(f, "{parse_int_error}"),
             ErrorKind::ParseFloatError(parse_float_error) => write!(f, "{parse_float_error}"),
             ErrorKind::UnknownBuiltin { name } => write!(f, "unknown builtin `{name}`"),
-            ErrorKind::CannotUnop { verb, expr } => write!(f, "cannot {verb} {expr}"),
-            ErrorKind::CannotBinop { verb, lhs, rhs } => write!(f, "cannot {verb} {lhs} and {rhs}"),
             ErrorKind::Unexpected { expected, got } => write!(f, "expected {expected}, got {got}"),
             ErrorKind::UnresolvedIdentifier { symbol_name } => {
                 write!(f, "cannot resolve symbol `{symbol_name}`")
             }
-            ErrorKind::DivisionByZero => write!(f, "division by zero"),
             ErrorKind::QuotedEof => write!(f, "unterminated quoted literal"),
+            ErrorKind::CannotUnop { verb, expr } => write!(f, "cannot {verb} {expr}"),
+            ErrorKind::CannotBinop { verb, lhs, rhs } => write!(f, "cannot {verb} {lhs} and {rhs}"),
+            ErrorKind::DivisionByZero => write!(f, "division by zero"),
+            ErrorKind::NonTotal => write!(f, "non-total application"),
         }
     }
 }
