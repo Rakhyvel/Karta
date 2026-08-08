@@ -597,8 +597,7 @@ in eval "#;
     #[test]
     fn set_pattern_match() -> Result<(), KartaError> {
         let src = r#"let
-    ; TODO: nested maps
-    ; eval {{.d}} = 10
+    eval {{.d}} = 10
     eval {.a, .b} = 400
     eval {.a} = 100
     eval {.b} = 200
@@ -644,6 +643,36 @@ in eval "#;
             let mut kctx = KartaContext::new();
 
             let res = kctx.eval(format!("{src}{input}"))?.as_i64().unwrap();
+
+            assert_eq!(res, expected);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn eq_pattern_match() -> Result<(), KartaError> {
+        let src = r#"let
+    eq x = {x}
+in eq "#;
+
+        for (input, expected) in [
+            ("0 0", true),
+            ("0 1", false),
+            ("0 {.a}", false),
+            ("{.a = 1} {.a = 1}", true),
+            ("{.a = 1, .b = 2} {.b = 2, .a = 1}", true),
+            ("{.a = 1} {.a = 2}", false),
+            ("{.a = 1} {.a = 1, .b = 2}", false),
+            ("{.a = 1, .b = 2} {.a = 1}", false),
+            ("{} {}", true),
+            ("{.a = {.b = 1}} {.a = {.b = 1}}", true),
+            ("\"hi\" \"hi\"", true),
+            ("\"hi\" \"hey\"", false),
+        ] {
+            let mut kctx = KartaContext::new();
+
+            let res = kctx.eval(format!("{src}{input}"))?.is_truthy();
 
             assert_eq!(res, expected);
         }

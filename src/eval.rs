@@ -90,10 +90,17 @@ impl Heap {
 
     fn alloc_map(&mut self, pairs: Vec<(Value, Value)>) -> HeapAddr {
         if pairs.is_empty() {
-            HeapAddr::EMPTY_MAP
-        } else {
-            self.alloc(HeapObj::Map(pairs))
+            return HeapAddr::EMPTY_MAP;
         }
+
+        let mut deduped = Vec::with_capacity(pairs.len());
+        for (k, v) in pairs {
+            match deduped.iter().position(|(dk, _)| self.values_eq(*dk, k)) {
+                Some(i) => deduped[i] = (k, v),
+                None => deduped.push((k, v)),
+            }
+        }
+        self.alloc(HeapObj::Map(deduped))
     }
 
     fn alloc_closure(&mut self, func_id: FunctionId, values: Vec<Value>) -> HeapAddr {
@@ -109,7 +116,7 @@ impl Heap {
         Ok(self
             .as_map(addr)?
             .iter()
-            .find_map(|(k, v)| (*k == key).then_some(*v)))
+            .find_map(|(k, v)| self.values_eq(*k, key).then_some(*v)))
     }
 
     /// Wraps `map_get`, if the value isn't present, returns the empy map
@@ -127,6 +134,37 @@ impl Heap {
                     got: String::from("closure"),
                 },
             }),
+        }
+    }
+
+    fn values_eq(&self, a: Value, b: Value) -> bool {
+        match (a, b) {
+            (Value::Map(a_addr), Value::Map(b_addr)) => {
+                if a_addr == b_addr {
+                    // early out for identical maps
+                    return true;
+                }
+
+                // get their objs
+                let (HeapObj::Map(a_pairs), HeapObj::Map(b_pairs)) =
+                    (self.deref(a_addr), self.deref(b_addr))
+                else {
+                    unreachable!("map addr didnt refer to map");
+                };
+
+                // check that b has every one of a's keys, and that they map to the same thing
+                a_pairs.len() == b_pairs.len()
+                    && a_pairs.iter().all(|(ak, av)| {
+                        b_pairs
+                            .iter()
+                            .any(|(bk, bv)| self.values_eq(*ak, *bk) && self.values_eq(*av, *bv))
+                    })
+            }
+
+            (Value::Undefined, _) => unreachable!("lhs was undefined"),
+            (_, Value::Undefined) => unreachable!("rhs was undefined"),
+
+            _ => a == b,
         }
     }
 
@@ -314,16 +352,20 @@ impl<'a> Eval<'a> {
 
             Instr::GetKey { dst, src, key } => {
                 let src_val = self.load(*src);
-                self.apply(*dst, src_val, *key, EvalMode::Normal)?;
+                let key_val = self.load(*key);
+                self.apply(*dst, src_val, key_val, EvalMode::Normal)?;
             }
 
             Instr::TestConst { dst, src, value } => {
-                self.store(*dst, self.make_bool(self.load(*src) == *value));
+                let a = self.load(*src);
+                let b = self.load(*value);
+                self.store(*dst, self.make_bool(self.heap.values_eq(a, b)));
             }
 
             Instr::TestHasKey { dst, src, key } => {
                 let src_val = self.load(*src);
-                match self.apply(*dst, src_val, *key, EvalMode::Probe) {
+                let key_val = self.load(*key);
+                match self.apply(*dst, src_val, key_val, EvalMode::Probe) {
                     Ok(_) => {}
 
                     // If applying failed (like trying to apply to a non-applicable) then store false, it doesn't have the key
@@ -555,30 +597,7 @@ impl<'a> Eval<'a> {
 
     fn eql(&self, args: Value) -> Result<Value, KartaError> {
         let (lhs, rhs) = self.get_pair(args)?;
-
-        match (lhs, rhs) {
-            (Value::Int(_), Value::Int(_))
-            | (Value::Float(_), Value::Float(_))
-            | (Value::Char(_), Value::Char(_))
-            | (Value::Atom(_), Value::Atom(_))
-            | (Value::Builtin(_), Value::Builtin(_))
-            | (Value::Closure(_), Value::Closure(_)) => Ok(self.make_bool(lhs == rhs)),
-
-            // TODO: actual structural map object equality, for now just compare heap addrs
-            (Value::Map(l_addr), Value::Map(r_addr)) => Ok(self.make_bool(l_addr == r_addr)),
-
-            (Value::Undefined, _) => unreachable!("lhs was undefined"),
-            (_, Value::Undefined) => unreachable!("rhs was undefined"),
-
-            (lhs, rhs) => Err(KartaError {
-                span: Span { start: 67, end: 67 },
-                kind: ErrorKind::CannotBinop {
-                    verb: "compare",
-                    lhs: format!("{lhs:?}"), // TODO: An eval-aware value renderer
-                    rhs: format!("{rhs:?}"), // TODO: An eval-aware value renderer
-                },
-            }),
-        }
+        Ok(self.make_bool(self.heap.values_eq(lhs, rhs)))
     }
 
     fn arith(

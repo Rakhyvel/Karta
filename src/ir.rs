@@ -4,7 +4,7 @@ use crate::{
     ast::{Ast, AstHeap, AstId},
     builtin::Builtin,
     elaborate::Elaboration,
-    interner::{AtomId, StringLiteralId},
+    interner::{AtomId, AtomTable, StringLiteralId},
     pattern::{Pattern, PatternHeap, PatternId},
     scope::DefId,
 };
@@ -67,19 +67,19 @@ pub enum Instr {
     GetKey {
         dst: Slot,
         src: Slot,
-        key: Value,
+        key: Slot,
     },
 
     TestConst {
         dst: Slot,
         src: Slot,
-        value: Value,
+        value: Slot,
     },
 
     TestHasKey {
         dst: Slot,
         src: Slot,
-        key: Value,
+        key: Slot,
     },
 
     TestTupleLength {
@@ -111,7 +111,7 @@ pub enum Instr {
 #[must_use]
 struct PatchSite(usize);
 
-#[derive(Debug, Clone, PartialEq, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Value {
     Undefined,
     Int(i64),
@@ -154,7 +154,7 @@ impl Value {
     /// Determine whether this value is truthy
     pub fn is_truthy(&self) -> bool {
         debug_assert!(!matches!(*self, Value::Undefined));
-        *self != Value::Map(HeapAddr::EMPTY_MAP)
+        !matches!(*self, Value::Map(HeapAddr::EMPTY_MAP))
     }
 }
 
@@ -381,6 +381,46 @@ impl<'a> Lowerer<'a> {
         }
     }
 
+    fn lower_pattern(&mut self, id: PatternId) -> Slot {
+        let pattern = self.patterns.get(id).expect("invalid pattern id");
+
+        match pattern {
+            Pattern::Identifier(_) | Pattern::Wildcard => unreachable!("not a valid pattern"),
+
+            Pattern::Int(n) => self.lower_const(Value::Int(*n)),
+            Pattern::Char(c) => self.lower_const(Value::Char(*c)),
+            Pattern::Atom(id) => self.lower_const(Value::Atom(*id)),
+
+            Pattern::Map(items) => {
+                let pairs = items
+                    .iter()
+                    .map(|(k, v)| {
+                        let key = self.lower_pattern(*k);
+                        let val = match v {
+                            Some(v) => self.lower_pattern(*v),
+                            None => self.lower_const(Value::Atom(AtomTable::TRUE)),
+                        };
+                        (key, val)
+                    })
+                    .collect();
+                self.lower_map(pairs)
+            }
+
+            Pattern::Tuple(pattern_ids) => {
+                let pairs = pattern_ids
+                    .iter()
+                    .enumerate()
+                    .map(|(i, elem)| {
+                        let index = self.lower_const(Value::Int(i as i64));
+                        let elem_val = self.lower_pattern(*elem);
+                        (index, elem_val)
+                    })
+                    .collect();
+                self.lower_map(pairs)
+            }
+        }
+    }
+
     fn lower_const(&mut self, value: Value) -> Slot {
         let dst = self.new_slot();
         self.emit(Instr::Const { dst, value });
@@ -489,23 +529,19 @@ impl<'a> Lowerer<'a> {
             }
 
             Pattern::Int(_) | Pattern::Char(_) | Pattern::Atom(_) => {
-                let value = self.pattern_const(pat).expect("const pattern");
-                vec![self.lower_test_const(src, value)]
+                let slot = self.lower_pattern(pat);
+                vec![self.lower_test_const(src, slot)]
             }
 
             Pattern::Map(pairs) => {
-                let pairs: Vec<(Value, Option<PatternId>)> = pairs
-                    .iter()
-                    .map(|(k, v)| (self.pattern_const(*k).expect("const key"), *v))
-                    .collect();
-
                 let mut sites = Vec::new();
                 for (key, value_pat) in pairs {
-                    sites.push(self.lower_test_has_key(src, key));
+                    let key_slot = self.lower_pattern(*key);
+                    sites.push(self.lower_test_has_key(src, key_slot));
 
                     if let Some(value_pat) = value_pat {
-                        let extracted = self.lower_get_key(src, key);
-                        sites.extend(self.lower_pattern_match(value_pat, extracted));
+                        let extracted = self.lower_get_key(src, key_slot);
+                        sites.extend(self.lower_pattern_match(*value_pat, extracted));
                     }
                 }
 
@@ -517,8 +553,8 @@ impl<'a> Lowerer<'a> {
                 sites.push(self.lower_test_tuple_len(src, elems.len()));
 
                 for (i, elem) in elems.iter().enumerate() {
-                    let key = Value::Int(i as i64);
-                    let extracted = self.lower_get_key(src, key);
+                    let key_slot = self.lower_const(Value::Int(i as i64));
+                    let extracted = self.lower_get_key(src, key_slot);
                     sites.extend(self.lower_pattern_match(*elem, extracted));
                 }
 
@@ -536,7 +572,7 @@ impl<'a> Lowerer<'a> {
         })
     }
 
-    fn lower_test_const(&mut self, anon_param: Slot, value: Value) -> PatchSite {
+    fn lower_test_const(&mut self, anon_param: Slot, value: Slot) -> PatchSite {
         self.lower_test(|cond| Instr::TestConst {
             dst: cond,
             src: anon_param,
@@ -544,7 +580,7 @@ impl<'a> Lowerer<'a> {
         })
     }
 
-    fn lower_test_has_key(&mut self, src: Slot, key: Value) -> PatchSite {
+    fn lower_test_has_key(&mut self, src: Slot, key: Slot) -> PatchSite {
         self.lower_test(|cond| Instr::TestHasKey {
             dst: cond,
             src,
@@ -560,7 +596,7 @@ impl<'a> Lowerer<'a> {
         })
     }
 
-    fn lower_get_key(&mut self, src: Slot, key: Value) -> Slot {
+    fn lower_get_key(&mut self, src: Slot, key: Slot) -> Slot {
         let extracted = self.new_slot();
         self.emit(Instr::GetKey {
             dst: extracted,
@@ -568,15 +604,6 @@ impl<'a> Lowerer<'a> {
             key,
         });
         extracted
-    }
-
-    fn pattern_const(&self, pat: PatternId) -> Option<Value> {
-        match self.patterns.get(pat)? {
-            Pattern::Int(n) => Some(Value::Int(*n)),
-            Pattern::Char(c) => Some(Value::Char(*c)),
-            Pattern::Atom(id) => Some(Value::Atom(*id)),
-            _ => None,
-        }
     }
 
     fn lower_anon_lambda(

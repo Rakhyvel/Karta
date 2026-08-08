@@ -8,8 +8,8 @@
     - [x] wildcards
     - [x] guards
     - [x] tuple patterns
-    - [ ] accepts?
-    - [ ] map structural equality, nested map keys
+    - [x] accepts?
+    - [x] map structural equality, nested map keys
     - [ ] list patterns, string patterns
     - [ ] `match` ... `with`
     - [ ] type predicates
@@ -21,9 +21,11 @@
 - [ ] core.k
 - [ ] runtime spans in eval, stack trace on eval panic
 - [ ] laziness
+- [ ] fix map equality cycles
+- [ ] constant pool
+- [ ] make maps hash maps rather than pair lists
 - [ ] string interpolation, string/char escapes
 - [ ] `where`, `$` to end of line
-- [ ] `when` for guards
 
 ### Core
 - [ ] applicative algebra combinators `|`, `&`, `~`
