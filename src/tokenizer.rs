@@ -34,6 +34,7 @@ impl<'a> Tokenizer<'a> {
                 TokenizerState::None => self.handle_none(char),
                 TokenizerState::Whitespace => self.handle_whitespace(char, tokens),
                 TokenizerState::Integer => self.handle_integer(char, tokens),
+                TokenizerState::DoublePeriod => self.handle_double_period(tokens),
                 TokenizerState::Atom => self.handle_sigiled(TokenKind::Atom, char, tokens),
                 TokenizerState::Builtin => self.handle_sigiled(TokenKind::Builtin, char, tokens),
                 TokenizerState::Char => self.handle_quoted('\'', char, tokens)?,
@@ -55,6 +56,8 @@ impl<'a> Tokenizer<'a> {
             self.advance(TokenizerState::Whitespace)
         } else if char.is_ascii_digit() {
             self.advance(TokenizerState::Integer)
+        } else if char == '.' && self.peek_char() == Some('.') {
+            self.advance(TokenizerState::DoublePeriod)
         } else if char == '.' {
             self.advance(TokenizerState::Atom)
         } else if char == '@' {
@@ -107,6 +110,11 @@ impl<'a> Tokenizer<'a> {
         } else {
             self.advance(self.state)
         }
+    }
+
+    fn handle_double_period(&mut self, tokens: &mut Vec<Token>) {
+        self.advance(TokenizerState::None);
+        self.add_token(TokenKind::DoublePeriod, tokens);
     }
 
     /// Create a sigil token (atom or builtin)
@@ -218,6 +226,12 @@ impl<'a> Tokenizer<'a> {
         self.state = new_state;
     }
 
+    fn peek_char(&self) -> Option<char> {
+        let mut chars = self.source_file.text()[self.cursor as usize..].chars();
+        chars.next();
+        chars.next()
+    }
+
     /// Adds the current span as a token to the list of tokens
     fn add_token(&mut self, kind: TokenKind, tokens: &mut Vec<Token>) {
         let token = Token {
@@ -242,6 +256,7 @@ enum TokenizerState {
     Integer,
     Atom,
     Builtin,
+    DoublePeriod,
     Char,
     String,
     Symbol,
@@ -289,6 +304,7 @@ pub enum TokenKind {
     String,
     Identifier,
     Wildcard,
+    DoublePeriod,
     Comma,
     Assign,
     Let,
@@ -318,6 +334,7 @@ impl TokenKind {
             "\\" => TokenKind::Backslash,
             "->" => TokenKind::Arrow,
             "," => TokenKind::Comma,
+            ".." => TokenKind::DoublePeriod,
             "=" => TokenKind::Assign,
             "let" => TokenKind::Let,
             "in" => TokenKind::In,

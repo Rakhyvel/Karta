@@ -203,7 +203,9 @@ impl<'a> AstVisitor for Declare<'a> {
             | Pattern::Char(_)
             | Pattern::Atom(_)
             | Pattern::Map(_)
-            | Pattern::Tuple(_) => {}
+            | Pattern::Tuple(_)
+            | Pattern::List(_, _)
+            | Pattern::String(_) => {}
 
             Pattern::Identifier(name) => {
                 let param_def_id = self.elab.defs.create_def(0, DefKind::Parameter, None);

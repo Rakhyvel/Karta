@@ -1,5 +1,5 @@
 use crate::{
-    interner::{AtomId, SymbolId},
+    interner::{AtomId, StringLiteralId, SymbolId},
     span::Span,
 };
 
@@ -59,6 +59,19 @@ impl PatternHeap {
         self.insert(Pattern::Tuple(elems), span)
     }
 
+    pub(crate) fn create_list(
+        &mut self,
+        span: Span,
+        elems: Vec<PatternId>,
+        tail: Option<PatternId>,
+    ) -> PatternId {
+        self.insert(Pattern::List(elems, tail), span)
+    }
+
+    pub(crate) fn create_string(&mut self, span: Span, id: StringLiteralId) -> PatternId {
+        self.insert(Pattern::String(id), span)
+    }
+
     /// Retrieves a reference to an Ast for a given ID, if it exists
     pub(crate) fn get(&self, id: PatternId) -> Option<&Pattern> {
         self.patterns.get(id.as_u32() as usize)
@@ -94,5 +107,6 @@ pub enum Pattern {
     Atom(AtomId),
     Map(Vec<(PatternId, Option<PatternId>)>),
     Tuple(Vec<PatternId>),
-    // TODO: Add more!
+    List(Vec<PatternId>, Option<PatternId>),
+    String(StringLiteralId),
 }

@@ -274,6 +274,18 @@ impl<'a> Lowerer<'a> {
                 self.lower_map(pairs)
             }
 
+            Ast::List(elems) => {
+                let mut addr = self.lower_map(vec![]);
+
+                let head_slot = self.lower_const(Value::Atom(AtomTable::HEAD));
+                let tail_slot = self.lower_const(Value::Atom(AtomTable::TAIL));
+                for elem in elems.iter().rev() {
+                    let elem_slot = self.lower_ast(*elem);
+                    addr = self.lower_map(vec![(head_slot, elem_slot), (tail_slot, addr)]);
+                }
+                addr
+            }
+
             Ast::Identifier(_) => {
                 let def = self.elab.refer(id);
                 self.resolve(def, self.stack.len() - 1)
@@ -376,8 +388,7 @@ impl<'a> Lowerer<'a> {
 
                 result
             }
-
-            _ => todo!("not implemented: {:?}", ast),
+            Ast::File(_ast_ids) => todo!(),
         }
     }
 
@@ -385,11 +396,17 @@ impl<'a> Lowerer<'a> {
         let pattern = self.patterns.get(id).expect("invalid pattern id");
 
         match pattern {
-            Pattern::Identifier(_) | Pattern::Wildcard => unreachable!("not a valid pattern"),
+            Pattern::Identifier(_)
+            | Pattern::Wildcard
+            | Pattern::List(_, _)
+            | Pattern::Tuple(_) => {
+                unreachable!("not a valid pattern")
+            }
 
             Pattern::Int(n) => self.lower_const(Value::Int(*n)),
             Pattern::Char(c) => self.lower_const(Value::Char(*c)),
             Pattern::Atom(id) => self.lower_const(Value::Atom(*id)),
+            Pattern::String(id) => self.lower_string(*id),
 
             Pattern::Map(items) => {
                 let pairs = items
@@ -401,19 +418,6 @@ impl<'a> Lowerer<'a> {
                             None => self.lower_const(Value::Atom(AtomTable::TRUE)),
                         };
                         (key, val)
-                    })
-                    .collect();
-                self.lower_map(pairs)
-            }
-
-            Pattern::Tuple(pattern_ids) => {
-                let pairs = pattern_ids
-                    .iter()
-                    .enumerate()
-                    .map(|(i, elem)| {
-                        let index = self.lower_const(Value::Int(i as i64));
-                        let elem_val = self.lower_pattern(*elem);
-                        (index, elem_val)
                     })
                     .collect();
                 self.lower_map(pairs)
@@ -528,7 +532,7 @@ impl<'a> Lowerer<'a> {
                 vec![]
             }
 
-            Pattern::Int(_) | Pattern::Char(_) | Pattern::Atom(_) => {
+            Pattern::Int(_) | Pattern::Char(_) | Pattern::Atom(_) | Pattern::String(_) => {
                 let slot = self.lower_pattern(pat);
                 vec![self.lower_test_const(src, slot)]
             }
@@ -550,12 +554,43 @@ impl<'a> Lowerer<'a> {
 
             Pattern::Tuple(elems) => {
                 let mut sites = Vec::new();
-                sites.push(self.lower_test_tuple_len(src, elems.len()));
+                sites.push(self.lower_test_tuple_len(src, elems.len())); // has to be the same length
 
+                // Check that each integer key matches
                 for (i, elem) in elems.iter().enumerate() {
                     let key_slot = self.lower_const(Value::Int(i as i64));
                     let extracted = self.lower_get_key(src, key_slot);
                     sites.extend(self.lower_pattern_match(*elem, extracted));
+                }
+
+                sites
+            }
+
+            Pattern::List(elems, tail) => {
+                let mut sites = Vec::new();
+
+                let head_slot = self.lower_const(Value::Atom(AtomTable::HEAD));
+                let tail_slot = self.lower_const(Value::Atom(AtomTable::TAIL));
+
+                let mut cell = src;
+
+                // Check that each cons cell matches the elems
+                for elem in elems {
+                    sites.push(self.lower_test_has_key(cell, head_slot));
+                    let head_val = self.lower_get_key(cell, head_slot);
+                    sites.extend(self.lower_pattern_match(*elem, head_val));
+                    cell = self.lower_get_key(cell, tail_slot);
+                }
+
+                match tail {
+                    // If tail pattern, list can keep going and be some other pattern
+                    Some(tail) => sites.extend(self.lower_pattern_match(*tail, cell)),
+
+                    // If no tail pattern, list must end here
+                    None => {
+                        let empty = self.lower_map(vec![]);
+                        sites.push(self.lower_test_const(cell, empty));
+                    }
                 }
 
                 sites

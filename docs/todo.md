@@ -10,7 +10,7 @@
     - [x] tuple patterns
     - [x] accepts?
     - [x] map structural equality, nested map keys
-    - [ ] list patterns, string patterns
+    - [x] list patterns, string patterns
     - [ ] `match` ... `with`
     - [ ] type predicates
 - [ ] imports
@@ -22,6 +22,7 @@
 - [ ] runtime spans in eval, stack trace on eval panic
 - [ ] laziness
 - [ ] fix map equality cycles
+- [ ] Allow tuples/lists to be keys
 - [ ] constant pool
 - [ ] make maps hash maps rather than pair lists
 - [ ] string interpolation, string/char escapes

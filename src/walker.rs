@@ -135,7 +135,8 @@ where
             | Pattern::Identifier(_)
             | Pattern::Int(_)
             | Pattern::Char(_)
-            | Pattern::Atom(_) => {}
+            | Pattern::Atom(_)
+            | Pattern::String(_) => {}
 
             Pattern::Map(patterns) => {
                 for (key, value) in patterns {
@@ -149,6 +150,15 @@ where
             Pattern::Tuple(elems) => {
                 for elem in elems {
                     self.walk_pattern(*elem)?;
+                }
+            }
+
+            Pattern::List(elems, tail) => {
+                for elem in elems {
+                    self.walk_pattern(*elem)?;
+                }
+                if let Some(tail) = tail {
+                    self.walk_pattern(*tail)?;
                 }
             }
         }

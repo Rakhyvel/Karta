@@ -710,6 +710,72 @@ in eval "#;
     }
 
     #[test]
+    fn list_pattern_match() -> Result<(), KartaError> {
+        let src = r#"let
+    f [a, b] = @sub(a, b)
+    f _ = 100
+
+    g [a, b, ..rest] = @sub(a, b)
+    g _ = 200
+in "#;
+
+        for (input, expected) in [
+            ("f [0, 0]", 0),
+            ("f [300, 0]", 300),
+            ("f {.head = 210, .tail = {.head = 10, .tail = {}}}", 200),
+            ("f [2, 1]", 1),
+            ("g [5, 2]", 3),
+            ("g [9, 4, 1]", 5),
+            ("f []", 100),
+            ("f [1]", 100),
+            ("f [1, 2, 3]", 100),
+            ("g [1]", 200),
+        ] {
+            let mut kctx = KartaContext::new();
+
+            let res = kctx.eval(format!("{src}{input}"))?.as_i64().unwrap();
+
+            assert_eq!(res, expected);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn string_pattern_match() -> Result<(), KartaError> {
+        let src = r#"let
+    f "hi" = 100
+    f {"hey"} = 150
+    f _ = 200
+
+    g "" = 100
+    g _ = 200
+in "#;
+
+        for (input, expected) in [
+            ("f \"hi\"", 100),
+            ("f {.head = 'h', .tail = {.head = 'i', .tail = {}}}", 100),
+            ("f {\"hey\"}", 150),
+            ("f {\"sup\"}", 200),
+            ("f \"hill\"", 200),
+            ("f \"h\"", 200),
+            ("f \"\"", 200),
+            ("g \"\"", 100),
+            ("g []", 100),
+            ("g ()", 100),
+            ("g {}", 100),
+        ] {
+            let mut kctx = KartaContext::new();
+
+            let res = kctx.eval(format!("{src}{input}"))?.as_i64().unwrap();
+
+            assert_eq!(res, expected);
+        }
+
+        Ok(())
+    }
+
+    #[test]
     fn wildcard_match() -> Result<(), KartaError> {
         let src = r#"let
     eval 0 = 100
@@ -825,25 +891,6 @@ in @accepts?"#;
         let res: i64 = kctx.eval("core.+ 65 45")?.as_i64().unwrap();
 
         assert_eq!(res, 110);
-        Ok(())
-    }
-
-    #[ignore = "patterns not impld yet"]
-    #[test]
-    fn list_empty_pattern_match() -> Result<(), KartaError> {
-        let mut karta_context = KartaContext::new();
-
-        let res: i64 = karta_context
-            .eval(
-                r#"let
-  test [] = 111
-in (test [1, 2, 3])
-"#,
-            )?
-            .as_i64()
-            .unwrap();
-
-        assert_eq!(res, 111);
         Ok(())
     }
 

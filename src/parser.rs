@@ -163,7 +163,7 @@ impl<'a> Parser<'a> {
         let name = self.symbols.intern(name_text);
 
         // Parse patterns into a list of args before the `=`
-        let params: Vec<PatternId> = self.parse_pattern_list()?;
+        let params: Vec<PatternId> = self.parse_param_list()?;
 
         let guard: Option<AstId> = if self.accept(TokenKind::When).is_some() {
             Some(self.let_in_expr().unwrap_or_else(|e| {
@@ -189,7 +189,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parses binding params in between the binding name and its `=` sign
-    fn parse_pattern_list(&mut self) -> Result<Vec<PatternId>, KartaError> {
+    fn parse_param_list(&mut self) -> Result<Vec<PatternId>, KartaError> {
         let mut params = Vec::new();
         // Keep trying to parse exprs until you hit an `=` sign
         loop {
@@ -202,18 +202,28 @@ impl<'a> Parser<'a> {
     }
 
     fn tuple_expr(&mut self) -> Result<AstId, KartaError> {
-        let expr = self.let_in_expr()?;
-        if let TokenKind::Comma = self.peek().kind {
-            let mut terms = vec![];
-            terms.push(expr);
+        let mut terms = vec![];
+        let mut commas: usize = 0;
+
+        let span = self.peek().span;
+
+        if self.peek().kind != TokenKind::RightParen {
+            terms.push(self.let_in_expr()?);
 
             while self.accept(TokenKind::Comma).is_some() {
+                commas += 1;
+                if let TokenKind::RightParen = self.peek().kind {
+                    // Comma accepted above was a trailing comma, break
+                    break;
+                }
                 terms.push(self.let_in_expr()?);
             }
+        }
 
-            Ok(self.asts.make_tuple(self.peek().span, terms))
+        if terms.len() == 1 && commas == 0 {
+            Ok(terms[0])
         } else {
-            Ok(expr)
+            Ok(self.asts.make_tuple(span, terms))
         }
     }
 
@@ -294,8 +304,11 @@ impl<'a> Parser<'a> {
             TokenKind::Wildcard => self.parse_pattern_wildcard(),
             TokenKind::Identifier => self.parse_pattern_identifier(),
             TokenKind::LeftParen => self.parse_pattern_parens(),
+            TokenKind::LeftSquare => self.parse_pattern_list(),
             TokenKind::LeftBrace => self.parse_pattern_map(),
-            TokenKind::Integer | TokenKind::Char | TokenKind::Atom => self.parse_pattern_const(),
+            TokenKind::Integer | TokenKind::Char | TokenKind::Atom | TokenKind::String => {
+                self.parse_pattern_const()
+            }
             _ => Err(KartaError {
                 span: self.peek().span,
                 kind: ErrorKind::Unexpected {
@@ -391,6 +404,7 @@ impl<'a> Parser<'a> {
             TokenKind::Char => self.parse_pattern_char(),
             TokenKind::Atom => self.parse_pattern_atom(),
             TokenKind::LeftBrace => self.parse_pattern_const_map(),
+            TokenKind::String => self.parse_pattern_string(),
             _ => Err(KartaError {
                 span: self.peek().span,
                 kind: ErrorKind::Unexpected {
@@ -467,6 +481,13 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn parse_pattern_string(&mut self) -> Result<PatternId, KartaError> {
+        let token_span = self.expect(TokenKind::String)?.span;
+        let token_text = self.source.span_text(token_span);
+        let string_literal_id = self.strings.intern(&token_text[1..token_text.len() - 1]);
+        Ok(self.patterns.create_string(token_span, string_literal_id))
+    }
+
     fn parse_pattern_parens(&mut self) -> Result<PatternId, KartaError> {
         self.expect(TokenKind::LeftParen)?;
         let retval = self.parse_pattern_tuple()?;
@@ -476,13 +497,15 @@ impl<'a> Parser<'a> {
 
     fn parse_pattern_tuple(&mut self) -> Result<PatternId, KartaError> {
         let mut terms = vec![];
+        let mut commas: usize = 0;
 
         let span = self.peek().span;
 
-        if self.accept(TokenKind::RightParen).is_none() {
+        if self.peek().kind != TokenKind::RightParen {
             terms.push(self.parse_pattern()?);
 
             while self.accept(TokenKind::Comma).is_some() {
+                commas += 1;
                 if let TokenKind::RightParen = self.peek().kind {
                     // Comma accepted above was a trailing comma, break
                     break;
@@ -491,7 +514,37 @@ impl<'a> Parser<'a> {
             }
         }
 
-        Ok(self.patterns.create_tuple(span, terms))
+        if terms.len() == 1 && commas == 0 {
+            Ok(terms[0])
+        } else {
+            Ok(self.patterns.create_tuple(span, terms))
+        }
+    }
+
+    fn parse_pattern_list(&mut self) -> Result<PatternId, KartaError> {
+        let token = self.expect(TokenKind::LeftSquare)?;
+        let mut elems: Vec<PatternId> = Vec::new();
+        let mut tail = None;
+
+        if self.accept(TokenKind::RightSquare).is_none() {
+            elems.push(self.parse_pattern()?);
+
+            while self.accept(TokenKind::Comma).is_some() {
+                if let TokenKind::RightSquare = self.peek().kind {
+                    // Comma accepted above was a trailing comma, break
+                    break;
+                }
+                if self.accept(TokenKind::DoublePeriod).is_some() {
+                    // tail pattern
+                    tail = Some(self.parse_pattern()?);
+                    break;
+                }
+                elems.push(self.parse_pattern()?);
+            }
+            self.expect(TokenKind::RightSquare)?;
+        }
+
+        Ok(self.patterns.create_list(token.span, elems, tail))
     }
 
     fn parse_pattern_integer(&mut self) -> Result<PatternId, KartaError> {
@@ -586,15 +639,18 @@ impl<'a> Parser<'a> {
 
         let mut children = Vec::new();
 
-        loop {
-            let child = self.let_in_expr()?;
-            children.push(child);
+        if self.accept(TokenKind::RightSquare).is_none() {
+            children.push(self.let_in_expr()?);
 
-            if self.accept(TokenKind::Comma).is_none() {
-                break;
+            while self.accept(TokenKind::Comma).is_some() {
+                if let TokenKind::RightSquare = self.peek().kind {
+                    // Comma accepted above was a trailing comma, break
+                    break;
+                }
+                children.push(self.let_in_expr()?);
             }
+            self.expect(TokenKind::RightSquare)?;
         }
-        self.expect(TokenKind::RightSquare)?;
         Ok(self.asts.make_list(token.span, children))
     }
 
