@@ -1,0 +1,1 @@
+; expect-error: no-main

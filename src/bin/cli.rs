@@ -1,4 +1,4 @@
-use std::process::ExitCode;
+use std::{path::PathBuf, process::ExitCode};
 
 use karta::KartaContext;
 
@@ -10,7 +10,9 @@ pub fn main() -> ExitCode {
 
     let mut kctx = KartaContext::new();
 
-    match kctx.run_file(path) {
+    let path = PathBuf::from(path);
+
+    match kctx.run_file(&path) {
         Ok(_) => ExitCode::SUCCESS,
         Err(msg) => {
             eprintln!("{msg:?}");

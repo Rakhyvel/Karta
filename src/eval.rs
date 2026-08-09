@@ -1,4 +1,4 @@
-use std::{collections::HashMap, rc::Rc};
+use std::{collections::HashMap, fmt::Display, rc::Rc};
 
 use crate::{
     builtin::Builtin,
@@ -11,6 +11,7 @@ use crate::{
 pub struct Eval<'a> {
     heap: &'a mut Heap,
     string_literal_table: &'a StringLiteralTable,
+    atoms: &'a AtomTable,
     program: Program,
     frame_stack: Vec<Frame>,
     result: Value,
@@ -206,12 +207,251 @@ impl Heap {
         self.strings.insert(id, addr);
         addr
     }
+
+    fn list_keys(&self, addr: HeapAddr) -> bool {
+        let HeapObj::Map(pairs) = self.deref(addr) else {
+            return false;
+        };
+
+        pairs.len() == 2
+            && pairs
+                .iter()
+                .any(|(k, _)| matches!(*k, Value::Atom(AtomTable::HEAD)))
+            && pairs
+                .iter()
+                .any(|(k, _)| matches!(*k, Value::Atom(AtomTable::TAIL)))
+    }
+
+    fn all_char_values(&self, addr: HeapAddr) -> bool {
+        let HeapObj::Map(pairs) = self.deref(addr) else {
+            return false;
+        };
+
+        pairs.iter().all(|(_, v)| matches!(*v, Value::Char(_)))
+    }
+
+    fn tuple_keys(&self, addr: HeapAddr) -> bool {
+        let HeapObj::Map(pairs) = self.deref(addr) else {
+            return false;
+        };
+
+        let len = pairs.len();
+
+        (0..len).into_iter().all(|i| {
+            pairs
+                .iter()
+                .any(|(k, _)| matches!(*k, Value::Int(j) if j as usize == i))
+        })
+    }
+
+    fn set_values(&self, addr: HeapAddr) -> bool {
+        let HeapObj::Map(pairs) = self.deref(addr) else {
+            return false;
+        };
+
+        pairs
+            .iter()
+            .all(|(_, v)| matches!(*v, Value::Atom(AtomTable::TRUE)))
+    }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct ValueRef<'a> {
     heap: &'a Heap,
+    atoms: &'a AtomTable,
     value: Value,
+}
+
+impl<'a> ValueRef<'a> {
+    fn fmt_depth(&self, f: &mut std::fmt::Formatter<'_>, depth: usize) -> std::fmt::Result {
+        if depth > 10 {
+            return write!(f, "...");
+        }
+
+        match self.value {
+            Value::Undefined => write!(f, "undefined"),
+            Value::Int(n) => write!(f, "{n}"),
+            Value::Float(n) => write!(f, "{n}"),
+            Value::Char(c) => write!(f, "'{c}'"),
+            Value::Atom(id) => {
+                let str = self.atoms.get(id);
+                write!(f, "{str}") // already does the .
+            }
+            Value::Builtin(builtin) => write!(f, "{}", builtin.repr()), // already does the @
+            Value::Closure(heap_addr) => write!(f, "<closure:{heap_addr}>"),
+            Value::Map(heap_addr) => {
+                if heap_addr == HeapAddr::EMPTY_MAP {
+                    return write!(f, "{{}}");
+                }
+
+                if self.heap.list_keys(heap_addr) {
+                    if self.heap.all_char_values(heap_addr) {
+                        return self.fmt_string(f, heap_addr);
+                    } else {
+                        return self.fmt_list(f, heap_addr, depth);
+                    }
+                }
+
+                if self.heap.tuple_keys(heap_addr) {
+                    return self.fmt_tuple(f, heap_addr, depth);
+                }
+
+                if self.heap.set_values(heap_addr) {
+                    return self.fmt_set(f, heap_addr, depth);
+                }
+
+                self.fmt_map(f, heap_addr, depth)
+            }
+        }
+    }
+
+    fn fmt_string(&self, f: &mut std::fmt::Formatter<'_>, mut addr: HeapAddr) -> std::fmt::Result {
+        write!(f, "\"")?;
+        let head_key = Value::Atom(AtomTable::HEAD);
+        let tail_key = Value::Atom(AtomTable::TAIL);
+        while addr != HeapAddr::EMPTY_MAP {
+            let Value::Char(c) = self.heap.map_lookup(addr, head_key).unwrap() else {
+                unreachable!("already checked");
+            };
+            write!(f, "{c}")?;
+            let Value::Map(next_addr) = self.heap.map_lookup(addr, tail_key).unwrap() else {
+                unreachable!("already checked");
+            };
+            addr = next_addr;
+        }
+        write!(f, "\"")
+    }
+
+    fn fmt_list(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        mut addr: HeapAddr,
+        depth: usize,
+    ) -> std::fmt::Result {
+        write!(f, "[")?;
+        let head_key = Value::Atom(AtomTable::HEAD);
+        let tail_key = Value::Atom(AtomTable::TAIL);
+        while addr != HeapAddr::EMPTY_MAP {
+            let elem = self.heap.map_lookup(addr, head_key).unwrap();
+
+            let elem = ValueRef {
+                value: elem,
+                heap: self.heap,
+                atoms: self.atoms,
+            };
+            elem.fmt_depth(f, depth + 1)?;
+
+            let Value::Map(next_addr) = self.heap.map_lookup(addr, tail_key).unwrap() else {
+                unreachable!("already checked");
+            };
+            addr = next_addr;
+            if addr != HeapAddr::EMPTY_MAP {
+                write!(f, ", ")?;
+            }
+        }
+        write!(f, "]")
+    }
+
+    fn fmt_tuple(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        addr: HeapAddr,
+        depth: usize,
+    ) -> std::fmt::Result {
+        write!(f, "(")?;
+
+        let HeapObj::Map(pairs) = self.heap.deref(addr) else {
+            unreachable!("already checked");
+        };
+
+        for i in 0..pairs.len() {
+            let elem = self.heap.map_lookup(addr, Value::Int(i as i64)).unwrap();
+
+            let elem = ValueRef {
+                value: elem,
+                heap: self.heap,
+                atoms: self.atoms,
+            };
+            elem.fmt_depth(f, depth + 1)?;
+
+            if i + 1 != pairs.len() {
+                write!(f, ", ")?;
+            }
+        }
+
+        write!(f, ")")
+    }
+
+    fn fmt_set(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        addr: HeapAddr,
+        depth: usize,
+    ) -> std::fmt::Result {
+        write!(f, "{{")?;
+
+        let HeapObj::Map(pairs) = self.heap.deref(addr) else {
+            unreachable!("already checked");
+        };
+
+        for (i, (k, _)) in pairs.iter().enumerate() {
+            let elem = ValueRef {
+                value: *k,
+                heap: self.heap,
+                atoms: self.atoms,
+            };
+            elem.fmt_depth(f, depth + 1)?;
+
+            if i + 1 != pairs.len() {
+                write!(f, ", ")?;
+            }
+        }
+
+        write!(f, "}}")
+    }
+
+    fn fmt_map(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        addr: HeapAddr,
+        depth: usize,
+    ) -> std::fmt::Result {
+        write!(f, "{{")?;
+
+        let HeapObj::Map(pairs) = self.heap.deref(addr) else {
+            unreachable!("already checked");
+        };
+
+        for (i, (k, v)) in pairs.iter().enumerate() {
+            let key = ValueRef {
+                value: *k,
+                heap: self.heap,
+                atoms: self.atoms,
+            };
+            key.fmt_depth(f, depth + 1)?;
+
+            write!(f, " = ")?;
+
+            let value = ValueRef {
+                value: *v,
+                heap: self.heap,
+                atoms: self.atoms,
+            };
+            value.fmt_depth(f, depth + 1)?;
+
+            if i + 1 != pairs.len() {
+                write!(f, ", ")?;
+            }
+        }
+
+        write!(f, "}}")
+    }
+}
+
+impl<'a> Display for ValueRef<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.fmt_depth(f, 0)
+    }
 }
 
 impl<'a> ValueRef<'a> {
@@ -273,6 +513,7 @@ impl<'a> Eval<'a> {
     pub fn new(
         heap: &'a mut Heap,
         string_literal_table: &'a StringLiteralTable,
+        atoms: &'a AtomTable,
         program: Program,
     ) -> Self {
         let entry = program.entry;
@@ -286,6 +527,7 @@ impl<'a> Eval<'a> {
                 EvalMode::Normal,
             )],
             program,
+            atoms,
             heap,
             string_literal_table,
             result: Value::Undefined,
@@ -304,6 +546,7 @@ impl<'a> Eval<'a> {
 
         Ok(ValueRef {
             heap: self.heap,
+            atoms: self.atoms,
             value: self.result,
         })
     }

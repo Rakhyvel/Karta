@@ -1,6 +1,10 @@
-use std::{fmt::Display, num};
+use std::{
+    fmt::Display,
+    num,
+    path::{Path, PathBuf},
+};
 
-use crate::span::Span;
+use crate::{source::SourceFile, span::Span};
 
 #[derive(Debug, Clone)]
 pub struct KartaError {
@@ -11,7 +15,7 @@ pub struct KartaError {
 #[derive(Debug, Clone)]
 pub enum ErrorKind {
     CannotOpenFile {
-        filename: String,
+        filename: PathBuf,
     },
     ParseIntError(num::ParseIntError),
     ParseFloatError(num::ParseFloatError),
@@ -44,7 +48,9 @@ pub enum ErrorKind {
 impl Display for ErrorKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ErrorKind::CannotOpenFile { filename } => write!(f, "cannot open {filename}"),
+            ErrorKind::CannotOpenFile { filename } => {
+                write!(f, "cannot open {}", filename.display())
+            }
             ErrorKind::ParseIntError(parse_int_error) => write!(f, "{parse_int_error}"),
             ErrorKind::ParseFloatError(parse_float_error) => write!(f, "{parse_float_error}"),
             ErrorKind::UnknownBuiltin { name } => write!(f, "unknown builtin `{name}`"),
@@ -58,5 +64,33 @@ impl Display for ErrorKind {
             ErrorKind::DivisionByZero => write!(f, "division by zero"),
             ErrorKind::NonTotal => write!(f, "non-total application"),
         }
+    }
+}
+
+impl KartaError {
+    pub fn in_source<'a>(&'a self, source: &'a SourceFile, path: &'a Path) -> Diagnostic<'a> {
+        Diagnostic {
+            err: self,
+            source,
+            path,
+        }
+    }
+}
+
+pub struct Diagnostic<'a> {
+    err: &'a KartaError,
+    source: &'a SourceFile,
+    path: &'a Path,
+}
+
+impl Display for Diagnostic<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (line, col) = self.source.line_col(self.err.span.start);
+        write!(
+            f,
+            "{}:{line}:{col}: error: {}",
+            self.path.display(),
+            self.err.kind
+        )
     }
 }

@@ -16,7 +16,7 @@ pub mod span;
 pub mod tokenizer;
 mod walker;
 
-use std::fs;
+use std::{fs, path::PathBuf};
 
 use ast::AstHeap;
 use parser::Parser;
@@ -73,33 +73,47 @@ impl KartaContext {
         }
     }
 
-    pub fn run_file(&mut self, path: impl ToString) -> Result<(), KartaError> {
-        let file_contents: String = fs::read_to_string(path.to_string()).map_err(|_| {
-            // TODO: Maybe the error info is useful?
-            KartaError {
-                span: Span { start: 0, end: 0 },
-                kind: ErrorKind::CannotOpenFile {
-                    filename: path.to_string(),
-                },
-            }
-        })?;
+    pub fn run_file(&mut self, path: &PathBuf) -> Result<String, String> {
+        let file_contents: String = fs::read_to_string(path)
+            .map_err(|_| {
+                // TODO: Maybe the error info is useful?
+                KartaError {
+                    span: Span { start: 0, end: 0 },
+                    kind: ErrorKind::CannotOpenFile {
+                        filename: path.clone(),
+                    },
+                }
+            })
+            .map_err(|err| format!("{}: error: {}", path.display(), err.kind))?;
 
         let source = SourceFile::new(file_contents);
-        let expr_ast = self.frontend(&source, ProcessKind::File)?;
+        let expr_ast = self
+            .frontend(&source, ProcessKind::File)
+            .map_err(|err| err.in_source(&source, path).to_string())?;
 
         let want_sym_id = self.symbol_table.intern("main");
-        let want = self.elab.lookup_root(want_sym_id).ok_or(KartaError {
-            span: Span { start: 0, end: 0 },
-            kind: ErrorKind::DivisionByZero, // TODO: A "not-defined" error
-        })?;
+        let want = self
+            .elab
+            .lookup_root(want_sym_id)
+            .ok_or(KartaError {
+                span: Span { start: 0, end: 0 },
+                kind: ErrorKind::DivisionByZero, // TODO: A "not-defined" error
+            })
+            .map_err(|err| err.in_source(&source, path).to_string())?;
 
         let program =
             Lowerer::new(&self.ast_heap, &self.pattern_heap, &self.elab).lower_file(expr_ast, want);
 
-        let eval = Eval::new(&mut self.heap, &self.string_literal_table, program);
-        let res = eval.eval()?;
-        eprintln!("{res:?}"); // TODO: Implement @println builtin and print inside karta
-        Ok(())
+        let eval = Eval::new(
+            &mut self.heap,
+            &self.string_literal_table,
+            &self.atom_table,
+            program,
+        );
+        let res = eval
+            .eval()
+            .map_err(|err| err.in_source(&source, path).to_string())?;
+        Ok(format!("{res}"))
     }
 
     /// Constructs a new query from an expression, to be evaluated within the context constructed so far
@@ -108,7 +122,12 @@ impl KartaContext {
         let expr_ast = self.frontend(&source, ProcessKind::Expr)?;
         let program =
             Lowerer::new(&self.ast_heap, &self.pattern_heap, &self.elab).lower_expr(expr_ast);
-        let eval = Eval::new(&mut self.heap, &self.string_literal_table, program);
+        let eval = Eval::new(
+            &mut self.heap,
+            &self.string_literal_table,
+            &self.atom_table,
+            program,
+        );
         eval.eval()
     }
 

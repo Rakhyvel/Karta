@@ -1,4 +1,8 @@
-use std::{collections::HashMap, rc::Rc};
+use std::{
+    collections::HashMap,
+    fmt::{Debug, Display},
+    rc::Rc,
+};
 
 use crate::{
     ast::{Ast, AstHeap, AstId},
@@ -183,6 +187,12 @@ impl HeapAddr {
 
     pub fn as_usize(self) -> usize {
         self.0 as usize
+    }
+}
+
+impl Display for HeapAddr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "0x{:08X}", self.0)
     }
 }
 
