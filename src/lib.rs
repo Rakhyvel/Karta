@@ -22,6 +22,7 @@ use ast::AstHeap;
 use parser::Parser;
 
 use crate::{
+    ast::AstId,
     elaborate::{Declare, Elaboration, Resolve},
     error::{ErrorKind, KartaError},
     eval::{Eval, Heap, ValueRef},
@@ -52,6 +53,11 @@ pub struct KartaContext {
     heap: Heap,
 }
 
+enum ProcessKind {
+    Expr,
+    File,
+}
+
 impl KartaContext {
     /// Creates a new Karta Context, or a string is any errors occured
     pub fn new() -> Self {
@@ -67,66 +73,57 @@ impl KartaContext {
         }
     }
 
-    /// Amends a module with the bindings in a file
-    pub fn import_file(
-        &mut self,
-        module_name: impl ToString,
-        filename: impl ToString,
-    ) -> Result<(), KartaError> {
-        let file_contents: String = match fs::read_to_string(filename.to_string()) {
-            Ok(c) => c,
-            Err(_) => {
-                // TODO: Maybe the error info is useful?
-                return Err(KartaError {
-                    span: Span { start: 0, end: 0 },
-                    kind: ErrorKind::CannotOpenFile {
-                        filename: filename.to_string(),
-                    },
-                });
+    pub fn run_file(&mut self, path: impl ToString) -> Result<(), KartaError> {
+        let file_contents: String = fs::read_to_string(path.to_string()).map_err(|_| {
+            // TODO: Maybe the error info is useful?
+            KartaError {
+                span: Span { start: 0, end: 0 },
+                kind: ErrorKind::CannotOpenFile {
+                    filename: path.to_string(),
+                },
             }
-        };
-        self.import(module_name, file_contents)
-    }
+        })?;
 
-    /// Amends a module with the bindings in a string
-    pub fn import(
-        &mut self,
-        _module_name: impl ToString,
-        file_contents: impl ToString,
-    ) -> Result<(), KartaError> {
-        let source = SourceFile::new(file_contents.to_string());
+        let source = SourceFile::new(file_contents);
+        let expr_ast = self.frontend(&source, ProcessKind::File)?;
 
-        let mut tokenizer = Tokenizer::new(&source);
-        let mut old_tokens = vec![];
-        tokenizer.tokenize(&mut old_tokens)?;
-        let tokens = layout::layout(&old_tokens);
+        let want_sym_id = self.symbol_table.intern("main");
+        let want = self.elab.lookup_root(want_sym_id).ok_or(KartaError {
+            span: Span { start: 0, end: 0 },
+            kind: ErrorKind::DivisionByZero, // TODO: A "not-defined" error
+        })?;
 
-        let parser = Parser::new(
-            &source,
-            &tokens,
-            &mut self.ast_heap,
-            &mut self.pattern_heap,
-            &mut self.symbol_table,
-            &mut self.string_literal_table,
-            &mut self.atom_table,
-        );
+        let program =
+            Lowerer::new(&self.ast_heap, &self.pattern_heap, &self.elab).lower_file(expr_ast, want);
 
-        let _file_ast = parser.parse_file();
-
-        todo!("emplace into the context with a ModuleId")
+        let eval = Eval::new(&mut self.heap, &self.string_literal_table, program);
+        let res = eval.eval()?;
+        eprintln!("{res:?}"); // TODO: Implement @println builtin and print inside karta
+        Ok(())
     }
 
     /// Constructs a new query from an expression, to be evaluated within the context constructed so far
     pub fn eval(&'_ mut self, expr_str: impl ToString) -> Result<ValueRef<'_>, KartaError> {
         let source = SourceFile::new(expr_str.to_string());
+        let expr_ast = self.frontend(&source, ProcessKind::Expr)?;
+        let program =
+            Lowerer::new(&self.ast_heap, &self.pattern_heap, &self.elab).lower_expr(expr_ast);
+        let eval = Eval::new(&mut self.heap, &self.string_literal_table, program);
+        eval.eval()
+    }
 
-        let mut tokenizer = Tokenizer::new(&source);
-        let mut old_tokens = vec![];
-        tokenizer.tokenize(&mut old_tokens)?;
-        let tokens = layout::layout(&old_tokens);
+    fn frontend(
+        &mut self,
+        source: &SourceFile,
+        process_kind: ProcessKind,
+    ) -> Result<AstId, KartaError> {
+        let mut tokenizer = Tokenizer::new(source);
+        let mut raw_tokens = vec![];
+        tokenizer.tokenize(&mut raw_tokens)?;
+        let tokens = layout::layout(&raw_tokens);
 
         let parser = Parser::new(
-            &source,
+            source,
             &tokens,
             &mut self.ast_heap,
             &mut self.pattern_heap,
@@ -134,7 +131,10 @@ impl KartaContext {
             &mut self.string_literal_table,
             &mut self.atom_table,
         );
-        let (expr_ast, parse_errors) = parser.parse_expr();
+        let (expr_ast, parse_errors) = match process_kind {
+            ProcessKind::Expr => parser.parse_expr(),
+            ProcessKind::File => parser.parse_file(),
+        };
         if !parse_errors.is_empty() {
             return Err(parse_errors[0].clone());
         }
@@ -159,10 +159,7 @@ impl KartaContext {
             return Err(resolve.errors()[0].clone());
         }
 
-        let program = Lowerer::new(&self.ast_heap, &self.pattern_heap, &self.elab).lower(expr_ast);
-
-        let eval = Eval::new(&mut self.heap, &self.string_literal_table, program);
-        eval.eval()
+        Ok(expr_ast)
     }
 }
 
@@ -856,69 +853,4 @@ in @accepts?"#;
 
         Ok(())
     }
-
-    #[ignore = "imports not impld yet"]
-    #[test]
-    fn import() -> Result<(), KartaError> {
-        let mut kctx = KartaContext::new();
-
-        kctx.import("test", "x = 100")?;
-        let res: i64 = kctx.eval("test.x")?.as_i64().unwrap();
-
-        assert_eq!(res, 100);
-        Ok(())
-    }
-
-    #[ignore = "imports not impld yet"]
-    #[test]
-    fn import_amend() -> Result<(), KartaError> {
-        let mut kctx = KartaContext::new();
-
-        kctx.import("test", "x = 100")?;
-        kctx.import("test", "y = 10")?;
-        let res: i64 = kctx.eval("@add (test.x, test.y)")?.as_i64().unwrap();
-
-        assert_eq!(res, 110);
-        Ok(())
-    }
-
-    #[ignore = "imports not impld yet"]
-    #[test]
-    fn import_core() -> Result<(), KartaError> {
-        let mut kctx = KartaContext::new();
-
-        kctx.import_file("core", "core/core.k")?;
-        let res: i64 = kctx.eval("core.+ 65 45")?.as_i64().unwrap();
-
-        assert_eq!(res, 110);
-        Ok(())
-    }
-
-    //     #[test]
-    //     fn list_iterator() -> Result<(), String> {
-    //         let mut karta_context = KartaContext::new();
-
-    //         let mut counter: i64 = 1;
-    //         for elem in karta_context.eval("[1, 2, 3]")? {
-    //             assert_eq!(counter, elem.as_int::<i64>()?);
-    //             counter += 1;
-    //         }
-
-    //         Ok(())
-    //     }
-
-    //     #[test]
-    //     fn double_list_iterator() -> Result<(), String> {
-    //         let mut karta_context = KartaContext::new();
-
-    //         let mut counter: i64 = 1;
-    //         for elem in karta_context.eval("[[1, 2, 3], [4, 5, 6], [7, 8, 9]]")? {
-    //             for elem2 in elem {
-    //                 assert_eq!(counter, elem2.as_int::<i64>()?);
-    //                 counter += 1;
-    //             }
-    //         }
-
-    //         Ok(())
-    //     }
 }

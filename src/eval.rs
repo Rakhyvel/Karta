@@ -60,11 +60,13 @@ impl Frame {
     }
 }
 
+#[derive(Debug)]
 enum HeapObj {
     Map(Vec<(Value, Value)>),
     Closure(FunctionId, Vec<Value>),
 }
 
+#[derive(Debug)]
 pub struct Heap {
     objs: Vec<HeapObj>,
     // Memoized string literal ID => addr map
@@ -206,6 +208,7 @@ impl Heap {
     }
 }
 
+#[derive(Debug)]
 pub struct ValueRef<'a> {
     heap: &'a Heap,
     value: Value,

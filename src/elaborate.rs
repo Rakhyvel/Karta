@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::{
     ast::{Ast, AstHeap, AstId},
     error::{ErrorKind, KartaError},
-    interner::SymbolTable,
+    interner::{SymbolId, SymbolTable},
     pattern::{Pattern, PatternHeap, PatternId},
     scope::{DefArena, DefId, DefKind, Definition, ScopeArena, ScopeId},
     walker::AstVisitor,
@@ -13,6 +13,8 @@ use crate::{
 pub struct Elaboration {
     scopes: ScopeArena,
     defs: DefArena,
+
+    root: ScopeId,
 
     /// Maps ASTs to the scopes that they exist within
     ast_scopes: HashMap<AstId, ScopeId>,
@@ -26,14 +28,26 @@ pub struct Elaboration {
 
 impl Elaboration {
     pub fn new() -> Self {
+        let mut scopes = ScopeArena::new();
+        let root = scopes.new_scope(None);
+
         Self {
-            scopes: ScopeArena::new(),
+            scopes,
             defs: DefArena::new(),
+            root,
             ast_scopes: HashMap::new(),
             defines: HashMap::new(),
             pattern_defines: HashMap::new(),
             references: HashMap::new(),
         }
+    }
+
+    pub fn root_scope(&self) -> ScopeId {
+        self.root
+    }
+
+    pub fn lookup_root(&self, sym: SymbolId) -> Option<DefId> {
+        self.scopes.lookup_ident_local(sym, self.root)
     }
 
     /// Get the DefId that `ast` defines
@@ -82,7 +96,7 @@ pub struct Declare<'a> {
 
 impl<'a> Declare<'a> {
     pub fn new(asts: &'a AstHeap, patterns: &'a PatternHeap, elab: &'a mut Elaboration) -> Self {
-        let root_scope_id = elab.scopes.new_scope(None);
+        let root_scope_id = elab.root_scope();
 
         Self {
             asts,

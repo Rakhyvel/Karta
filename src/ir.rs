@@ -196,6 +196,9 @@ pub struct Lowerer<'a> {
     asts: &'a AstHeap,
     patterns: &'a PatternHeap,
     elab: &'a Elaboration,
+
+    /// Maps top-level defs to their function IDs in `funcs`
+    globals: HashMap<DefId, FunctionId>,
     funcs: Vec<Function>,
     stack: Vec<FnState>,
 }
@@ -223,17 +226,105 @@ impl<'a> Lowerer<'a> {
             asts,
             patterns,
             elab,
+            globals: HashMap::new(),
             funcs: Vec::new(),
             stack: Vec::new(),
         }
     }
 
-    pub fn lower(mut self, root: AstId) -> Program {
-        self.push_fn();
+    pub fn lower_file(mut self, root: AstId, want: DefId) -> Program {
+        let Some(Ast::File(bindings)) = self.asts.get(root) else {
+            unreachable!("files are files")
+        };
+
+        // Get the vec of binding asts that are the first clause of their def
+        let firsts = self.first_clauses(bindings);
+
+        // Go through the firsts and pre-reserve each one in the `globals` map before lowering
+        for binding in &firsts {
+            let def = self.elab.define(*binding);
+            let id = self.add_func(Function {
+                instructions: Vec::new().into(),
+                slots_used: 0,
+                captures: Vec::new(),
+            });
+            self.globals.insert(def, id);
+        }
+
+        // Lower each binding
+        for binding in &firsts {
+            let def = self.elab.define(*binding);
+            let id = self.globals[&def];
+            let func = self.lower_top_level(*binding);
+            self.funcs[id.as_usize()] = func;
+        }
+
+        Program {
+            funcs: self.funcs,
+            entry: self.globals[&want],
+        }
+    }
+
+    fn lower_top_level(&mut self, binding: AstId) -> Function {
+        let def_id = self.elab.define(binding);
+        let def = self.elab.def(def_id);
+        let clauses = def.clauses().to_vec();
+        let param_defs = def.param_defs().to_vec();
+
+        match param_defs.first() {
+            // arity 0, a constant
+            None => {
+                self.begin_fn();
+                let _arg = self.new_slot();
+                let Some(Ast::Binding { rhs, .. }) = self.asts.get(clauses[0]) else {
+                    unreachable!("clause wasnt a binding")
+                };
+                let rhs = *rhs;
+                let body = self.lower_ast(rhs);
+                self.emit(Instr::Ret { src: body });
+                self.end_fn()
+            }
+
+            // arity n, outermost lambda is this function
+            Some(first) => self.lower_lambda_body(*first, |this| {
+                this.lower_param_chain(&clauses, &param_defs, 1)
+            }),
+        }
+    }
+
+    fn lower_global(&mut self, def: DefId) -> Slot {
+        let func_id = *self
+            .globals
+            .get(&def)
+            .unwrap_or_else(|| unreachable!("unresolved identifier: {def:?}"));
+
+        let closure = self.new_slot();
+        self.emit(Instr::MakeClosure {
+            dst: closure,
+            func_id,
+        });
+
+        if self.elab.def(def).arity() > 0 {
+            return closure;
+        }
+
+        let arg = self.emit_const(Value::Map(HeapAddr::EMPTY_MAP));
+        let dst = self.new_slot();
+        self.emit(Instr::Apply {
+            dst,
+            lhs: closure,
+            rhs: arg,
+        });
+        dst
+    }
+
+    pub fn lower_expr(mut self, root: AstId) -> Program {
+        self.begin_fn();
         let body_slot = self.lower_ast(root);
         self.emit(Instr::Ret { src: body_slot });
+        let func = self.end_fn();
 
-        let entry = self.finish_fn();
+        let entry = self.add_func(func);
 
         Program {
             funcs: self.funcs,
@@ -245,12 +336,12 @@ impl<'a> Lowerer<'a> {
         let ast = self.asts.get(id).expect("invalid AST id");
 
         match ast {
-            Ast::Int(n) => self.lower_const(Value::Int(*n)),
-            Ast::Float(n) => self.lower_const(Value::Float(*n)),
-            Ast::Char(id) => self.lower_const(Value::Char(*id)),
-            Ast::Atom(id) => self.lower_const(Value::Atom(*id)),
-            Ast::String(id) => self.lower_string(*id),
-            Ast::BuiltinFunction(builtin) => self.lower_const(Value::Builtin(*builtin)),
+            Ast::Int(n) => self.emit_const(Value::Int(*n)),
+            Ast::Float(n) => self.emit_const(Value::Float(*n)),
+            Ast::Char(id) => self.emit_const(Value::Char(*id)),
+            Ast::Atom(id) => self.emit_const(Value::Atom(*id)),
+            Ast::String(id) => self.emit_string(*id),
+            Ast::BuiltinFunction(builtin) => self.emit_const(Value::Builtin(*builtin)),
             Ast::Error => unreachable!("I only lower the finest of ASTs"),
 
             Ast::Map(pairs) => {
@@ -258,7 +349,7 @@ impl<'a> Lowerer<'a> {
                     .iter()
                     .map(|(k, v)| (self.lower_ast(*k), self.lower_ast(*v)))
                     .collect();
-                self.lower_map(pairs)
+                self.emit_map(pairs)
             }
 
             Ast::Tuple(elems) => {
@@ -266,29 +357,33 @@ impl<'a> Lowerer<'a> {
                     .iter()
                     .enumerate()
                     .map(|(i, elem)| {
-                        let index = self.lower_const(Value::Int(i as i64));
+                        let index = self.emit_const(Value::Int(i as i64));
                         let elem_val = self.lower_ast(*elem);
                         (index, elem_val)
                     })
                     .collect();
-                self.lower_map(pairs)
+                self.emit_map(pairs)
             }
 
             Ast::List(elems) => {
-                let mut addr = self.lower_map(vec![]);
+                let mut addr = self.emit_map(vec![]);
 
-                let head_slot = self.lower_const(Value::Atom(AtomTable::HEAD));
-                let tail_slot = self.lower_const(Value::Atom(AtomTable::TAIL));
+                let head_slot = self.emit_const(Value::Atom(AtomTable::HEAD));
+                let tail_slot = self.emit_const(Value::Atom(AtomTable::TAIL));
                 for elem in elems.iter().rev() {
                     let elem_slot = self.lower_ast(*elem);
-                    addr = self.lower_map(vec![(head_slot, elem_slot), (tail_slot, addr)]);
+                    addr = self.emit_map(vec![(head_slot, elem_slot), (tail_slot, addr)]);
                 }
                 addr
             }
 
             Ast::Identifier(_) => {
                 let def = self.elab.refer(id);
-                self.resolve(def, self.stack.len() - 1)
+                if self.globals.contains_key(&def) {
+                    self.lower_global(def)
+                } else {
+                    self.resolve(def, self.stack.len() - 1)
+                }
             }
 
             Ast::Apply(lhs, rhs) => {
@@ -304,9 +399,9 @@ impl<'a> Lowerer<'a> {
                 let mut group_slots = Vec::with_capacity(bindings.len());
                 for binding in bindings {
                     let def = self.elab.define(*binding);
-                    if !self.top_fn().scope.contains_key(&def) {
+                    if !self.current().scope.contains_key(&def) {
                         let slot = self.new_slot();
-                        self.top_fn_mut().scope.insert(def, slot);
+                        self.current_mut().scope.insert(def, slot);
                         group_slots.push(slot);
                     }
                 }
@@ -334,7 +429,7 @@ impl<'a> Lowerer<'a> {
                 assert!(!def.clauses().is_empty()); // should have at least one clause
                 assert!(def.clauses()[0] == id); // Only ever called for the first clause of a definition
                 let dst = *self
-                    .top_fn()
+                    .current()
                     .scope
                     .get(&def_id)
                     .expect("should be reserved by Let");
@@ -392,7 +487,7 @@ impl<'a> Lowerer<'a> {
         }
     }
 
-    fn lower_pattern(&mut self, id: PatternId) -> Slot {
+    fn lower_const_pattern(&mut self, id: PatternId) -> Slot {
         let pattern = self.patterns.get(id).expect("invalid pattern id");
 
         match pattern {
@@ -403,41 +498,41 @@ impl<'a> Lowerer<'a> {
                 unreachable!("not a valid pattern")
             }
 
-            Pattern::Int(n) => self.lower_const(Value::Int(*n)),
-            Pattern::Char(c) => self.lower_const(Value::Char(*c)),
-            Pattern::Atom(id) => self.lower_const(Value::Atom(*id)),
-            Pattern::String(id) => self.lower_string(*id),
+            Pattern::Int(n) => self.emit_const(Value::Int(*n)),
+            Pattern::Char(c) => self.emit_const(Value::Char(*c)),
+            Pattern::Atom(id) => self.emit_const(Value::Atom(*id)),
+            Pattern::String(id) => self.emit_string(*id),
 
             Pattern::Map(items) => {
                 let pairs = items
                     .iter()
                     .map(|(k, v)| {
-                        let key = self.lower_pattern(*k);
+                        let key = self.lower_const_pattern(*k);
                         let val = match v {
-                            Some(v) => self.lower_pattern(*v),
-                            None => self.lower_const(Value::Atom(AtomTable::TRUE)),
+                            Some(v) => self.lower_const_pattern(*v),
+                            None => self.emit_const(Value::Atom(AtomTable::TRUE)),
                         };
                         (key, val)
                     })
                     .collect();
-                self.lower_map(pairs)
+                self.emit_map(pairs)
             }
         }
     }
 
-    fn lower_const(&mut self, value: Value) -> Slot {
+    fn emit_const(&mut self, value: Value) -> Slot {
         let dst = self.new_slot();
         self.emit(Instr::Const { dst, value });
         dst
     }
 
-    fn lower_string(&mut self, id: StringLiteralId) -> Slot {
+    fn emit_string(&mut self, id: StringLiteralId) -> Slot {
         let dst = self.new_slot();
         self.emit(Instr::MakeString { dst, id });
         dst
     }
 
-    fn lower_map(&mut self, pairs: Vec<(Slot, Slot)>) -> Slot {
+    fn emit_map(&mut self, pairs: Vec<(Slot, Slot)>) -> Slot {
         let dst = self.new_slot();
         self.emit(Instr::MakeMap { dst, pairs });
         dst
@@ -487,7 +582,7 @@ impl<'a> Lowerer<'a> {
             // emit tests, jump to next clause on failure
             let mut fail_sites = Vec::new();
             for (pat, anon_param) in pats.iter().zip(&anon_params) {
-                fail_sites.extend(self.lower_pattern_match(*pat, *anon_param));
+                fail_sites.extend(self.lower_pattern_tests(*pat, *anon_param));
             }
 
             // do the guard
@@ -522,30 +617,30 @@ impl<'a> Lowerer<'a> {
         result
     }
 
-    fn lower_pattern_match(&mut self, pat: PatternId, src: Slot) -> Vec<PatchSite> {
+    fn lower_pattern_tests(&mut self, pat: PatternId, src: Slot) -> Vec<PatchSite> {
         match self.patterns.get(pat).expect("invalid pattern id") {
             Pattern::Wildcard => vec![], // irrefutable, but defines nothing
 
             Pattern::Identifier(_) => {
                 let def = self.elab.pattern_define(pat).expect("identifier defines");
-                self.top_fn_mut().scope.insert(def, src);
+                self.current_mut().scope.insert(def, src);
                 vec![]
             }
 
             Pattern::Int(_) | Pattern::Char(_) | Pattern::Atom(_) | Pattern::String(_) => {
-                let slot = self.lower_pattern(pat);
-                vec![self.lower_test_const(src, slot)]
+                let slot = self.lower_const_pattern(pat);
+                vec![self.emit_test_const(src, slot)]
             }
 
             Pattern::Map(pairs) => {
                 let mut sites = Vec::new();
                 for (key, value_pat) in pairs {
-                    let key_slot = self.lower_pattern(*key);
-                    sites.push(self.lower_test_has_key(src, key_slot));
+                    let key_slot = self.lower_const_pattern(*key);
+                    sites.push(self.emit_test_has_key(src, key_slot));
 
                     if let Some(value_pat) = value_pat {
-                        let extracted = self.lower_get_key(src, key_slot);
-                        sites.extend(self.lower_pattern_match(*value_pat, extracted));
+                        let extracted = self.emit_get_key(src, key_slot);
+                        sites.extend(self.lower_pattern_tests(*value_pat, extracted));
                     }
                 }
 
@@ -554,13 +649,13 @@ impl<'a> Lowerer<'a> {
 
             Pattern::Tuple(elems) => {
                 let mut sites = Vec::new();
-                sites.push(self.lower_test_tuple_len(src, elems.len())); // has to be the same length
+                sites.push(self.emit_test_tuple_len(src, elems.len())); // has to be the same length
 
                 // Check that each integer key matches
                 for (i, elem) in elems.iter().enumerate() {
-                    let key_slot = self.lower_const(Value::Int(i as i64));
-                    let extracted = self.lower_get_key(src, key_slot);
-                    sites.extend(self.lower_pattern_match(*elem, extracted));
+                    let key_slot = self.emit_const(Value::Int(i as i64));
+                    let extracted = self.emit_get_key(src, key_slot);
+                    sites.extend(self.lower_pattern_tests(*elem, extracted));
                 }
 
                 sites
@@ -569,27 +664,27 @@ impl<'a> Lowerer<'a> {
             Pattern::List(elems, tail) => {
                 let mut sites = Vec::new();
 
-                let head_slot = self.lower_const(Value::Atom(AtomTable::HEAD));
-                let tail_slot = self.lower_const(Value::Atom(AtomTable::TAIL));
+                let head_slot = self.emit_const(Value::Atom(AtomTable::HEAD));
+                let tail_slot = self.emit_const(Value::Atom(AtomTable::TAIL));
 
                 let mut cell = src;
 
                 // Check that each cons cell matches the elems
                 for elem in elems {
-                    sites.push(self.lower_test_has_key(cell, head_slot));
-                    let head_val = self.lower_get_key(cell, head_slot);
-                    sites.extend(self.lower_pattern_match(*elem, head_val));
-                    cell = self.lower_get_key(cell, tail_slot);
+                    sites.push(self.emit_test_has_key(cell, head_slot));
+                    let head_val = self.emit_get_key(cell, head_slot);
+                    sites.extend(self.lower_pattern_tests(*elem, head_val));
+                    cell = self.emit_get_key(cell, tail_slot);
                 }
 
                 match tail {
                     // If tail pattern, list can keep going and be some other pattern
-                    Some(tail) => sites.extend(self.lower_pattern_match(*tail, cell)),
+                    Some(tail) => sites.extend(self.lower_pattern_tests(*tail, cell)),
 
                     // If no tail pattern, list must end here
                     None => {
-                        let empty = self.lower_map(vec![]);
-                        sites.push(self.lower_test_const(cell, empty));
+                        let empty = self.emit_map(vec![]);
+                        sites.push(self.emit_test_const(cell, empty));
                     }
                 }
 
@@ -598,7 +693,7 @@ impl<'a> Lowerer<'a> {
         }
     }
 
-    fn lower_test(&mut self, make: impl FnOnce(Slot) -> Instr) -> PatchSite {
+    fn emit_test(&mut self, make: impl FnOnce(Slot) -> Instr) -> PatchSite {
         let cond = self.new_slot();
         self.emit(make(cond));
         self.emit_patchable(Instr::JumpIfFalse {
@@ -607,31 +702,31 @@ impl<'a> Lowerer<'a> {
         })
     }
 
-    fn lower_test_const(&mut self, anon_param: Slot, value: Slot) -> PatchSite {
-        self.lower_test(|cond| Instr::TestConst {
+    fn emit_test_const(&mut self, anon_param: Slot, value: Slot) -> PatchSite {
+        self.emit_test(|cond| Instr::TestConst {
             dst: cond,
             src: anon_param,
             value,
         })
     }
 
-    fn lower_test_has_key(&mut self, src: Slot, key: Slot) -> PatchSite {
-        self.lower_test(|cond| Instr::TestHasKey {
+    fn emit_test_has_key(&mut self, src: Slot, key: Slot) -> PatchSite {
+        self.emit_test(|cond| Instr::TestHasKey {
             dst: cond,
             src,
             key,
         })
     }
 
-    fn lower_test_tuple_len(&mut self, src: Slot, len: usize) -> PatchSite {
-        self.lower_test(|cond| Instr::TestTupleLength {
+    fn emit_test_tuple_len(&mut self, src: Slot, len: usize) -> PatchSite {
+        self.emit_test(|cond| Instr::TestTupleLength {
             dst: cond,
             src,
             len,
         })
     }
 
-    fn lower_get_key(&mut self, src: Slot, key: Slot) -> Slot {
+    fn emit_get_key(&mut self, src: Slot, key: Slot) -> Slot {
         let extracted = self.new_slot();
         self.emit(Instr::GetKey {
             dst: extracted,
@@ -641,26 +736,44 @@ impl<'a> Lowerer<'a> {
         extracted
     }
 
-    fn lower_anon_lambda(
+    fn lower_lambda_body(
         &mut self,
-        arg: DefId,
+        def: DefId,
         lower_body: impl FnOnce(&mut Self) -> Slot,
-    ) -> Slot {
+    ) -> Function {
         // Push a new function to the stack, fill it in
-        self.push_fn();
+        self.begin_fn();
         let param_slot = self.new_slot();
-        self.top_fn_mut().scope.insert(arg, param_slot);
+        self.current_mut().scope.insert(def, param_slot);
         let body_slot = lower_body(self);
         self.emit(Instr::Ret { src: body_slot });
+        self.end_fn()
+    }
 
-        let func_id = self.finish_fn();
-
+    fn lower_anon_lambda(
+        &mut self,
+        def: DefId,
+        lower_body: impl FnOnce(&mut Self) -> Slot,
+    ) -> Slot {
+        let func = self.lower_lambda_body(def, lower_body);
+        let func_id = self.add_func(func);
         let dst = self.new_slot();
         self.emit(Instr::MakeClosure { dst, func_id });
         dst
     }
 
-    fn push_fn(&mut self) {
+    fn first_clauses(&self, bindings: &[AstId]) -> Vec<AstId> {
+        bindings
+            .iter()
+            .copied()
+            .filter(|b| {
+                let def = self.elab.define(*b);
+                self.elab.def(def).clauses()[0] == *b
+            })
+            .collect()
+    }
+
+    fn begin_fn(&mut self) {
         self.stack.push(FnState {
             scope: HashMap::new(),
             slots_used: 0,
@@ -669,18 +782,21 @@ impl<'a> Lowerer<'a> {
         })
     }
 
-    fn finish_fn(&mut self) -> FunctionId {
-        let function = self.stack.pop().unwrap().into_function();
+    fn end_fn(&mut self) -> Function {
+        self.stack.pop().unwrap().into_function()
+    }
+
+    fn add_func(&mut self, func: Function) -> FunctionId {
         let id = FunctionId(self.funcs.len() as u32);
-        self.funcs.push(function);
+        self.funcs.push(func);
         id
     }
 
-    fn top_fn(&self) -> &FnState {
+    fn current(&self) -> &FnState {
         self.stack.last().unwrap()
     }
 
-    fn top_fn_mut(&mut self) -> &mut FnState {
+    fn current_mut(&mut self) -> &mut FnState {
         self.stack.last_mut().unwrap()
     }
 
@@ -710,17 +826,17 @@ impl<'a> Lowerer<'a> {
     }
 
     fn emit(&mut self, instr: Instr) {
-        self.top_fn_mut().instructions.push(instr);
+        self.current_mut().instructions.push(instr);
     }
 
     fn emit_patchable(&mut self, instr: Instr) -> PatchSite {
-        let idx = self.top_fn().instructions.len();
+        let idx = self.current().instructions.len();
         self.emit(instr);
         PatchSite(idx)
     }
 
     fn patch_here(&mut self, site: PatchSite) {
-        let frame = self.top_fn_mut();
+        let frame = self.current_mut();
         let curr_idx = frame.instructions.len();
 
         match &mut frame.instructions[site.0] {

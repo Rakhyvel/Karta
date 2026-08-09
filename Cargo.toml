@@ -7,6 +7,10 @@ edition = "2021"
 name = "karta-lsp"
 path = "src/bin/lsp.rs"
 
+[[bin]]
+name = "karta"
+path = "src/bin/cli.rs"
+
 [dependencies]
 lsp-server = "0.7"
 lsp-types = "0.95"
