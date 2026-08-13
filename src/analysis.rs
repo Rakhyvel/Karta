@@ -77,7 +77,12 @@ impl KartaContext {
             &self.ast_heap,
             &self.pattern_heap,
             expr_ast,
-            Declare::new(&self.ast_heap, &self.pattern_heap, &mut self.elab),
+            Declare::new(
+                &self.ast_heap,
+                &self.pattern_heap,
+                &self.symbol_table,
+                &mut self.elab,
+            ),
         ) {
             Ok(_) => {}
             Err(err) => {

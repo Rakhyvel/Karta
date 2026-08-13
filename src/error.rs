@@ -26,6 +26,17 @@ pub enum ErrorKind {
         expected: String,
         got: String,
     },
+    NonAdjacentClause {
+        sym_name: String,
+    },
+    Redefinition {
+        sym_name: String,
+    },
+    MismatchArity {
+        sym_name: String,
+        expected_arity: u32,
+        got_arity: u32,
+    },
     UnresolvedIdentifier {
         symbol_name: String,
     },
@@ -55,6 +66,25 @@ impl Display for ErrorKind {
             ErrorKind::ParseFloatError(parse_float_error) => write!(f, "{parse_float_error}"),
             ErrorKind::UnknownBuiltin { name } => write!(f, "unknown builtin `{name}`"),
             ErrorKind::Unexpected { expected, got } => write!(f, "expected {expected}, got {got}"),
+            ErrorKind::NonAdjacentClause { sym_name } => {
+                write!(
+                    f,
+                    "clause for `{sym_name}` not adjacent with the rest of its clauses"
+                )
+            }
+            ErrorKind::Redefinition { sym_name } => {
+                write!(f, "redefinition of `{sym_name}`")
+            }
+            ErrorKind::MismatchArity {
+                sym_name,
+                expected_arity,
+                got_arity,
+            } => {
+                write!(
+                    f,
+                    "expected arity {expected_arity} for `{sym_name}`, got {got_arity}"
+                )
+            }
             ErrorKind::UnresolvedIdentifier { symbol_name } => {
                 write!(f, "cannot resolve symbol `{symbol_name}`")
             }

@@ -87,6 +87,7 @@ impl Elaboration {
 pub struct Declare<'a> {
     asts: &'a AstHeap,
     patterns: &'a PatternHeap,
+    symbols: &'a SymbolTable,
     elab: &'a mut Elaboration,
 
     scope_stack: Vec<ScopeId>,
@@ -95,12 +96,18 @@ pub struct Declare<'a> {
 }
 
 impl<'a> Declare<'a> {
-    pub fn new(asts: &'a AstHeap, patterns: &'a PatternHeap, elab: &'a mut Elaboration) -> Self {
+    pub fn new(
+        asts: &'a AstHeap,
+        patterns: &'a PatternHeap,
+        symbols: &'a SymbolTable,
+        elab: &'a mut Elaboration,
+    ) -> Self {
         let root_scope_id = elab.root_scope();
 
         Self {
             asts,
             patterns,
+            symbols,
             elab,
             scope_stack: vec![root_scope_id],
             errors: vec![],
@@ -143,7 +150,9 @@ impl<'a> AstVisitor for Declare<'a> {
                             // Non-adjacent, an err
                             self.errors.push(KartaError {
                                 span: self.asts.span(id),
-                                kind: ErrorKind::DivisionByZero, // TODO: Unique error
+                                kind: ErrorKind::NonAdjacentClause {
+                                    sym_name: self.symbols.get(*name).to_string(),
+                                },
                             });
                         }
                     }
@@ -154,13 +163,19 @@ impl<'a> AstVisitor for Declare<'a> {
                         // Redefinition, always an err
                         self.errors.push(KartaError {
                             span: self.asts.span(id),
-                            kind: ErrorKind::DivisionByZero, // TODO: Unique error
+                            kind: ErrorKind::Redefinition {
+                                sym_name: self.symbols.get(*name).to_string(),
+                            },
                         });
                     } else if def_arity != params.len() as u32 {
                         // Mismatched arity, an err
                         self.errors.push(KartaError {
                             span: self.asts.span(id),
-                            kind: ErrorKind::DivisionByZero, // TODO: Unique error
+                            kind: ErrorKind::MismatchArity {
+                                sym_name: self.symbols.get(*name).to_string(),
+                                expected_arity: def_arity,
+                                got_arity: params.len() as u32,
+                            },
                         });
                     } else {
                         // All good, add the clause

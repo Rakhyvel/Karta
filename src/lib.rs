@@ -165,7 +165,12 @@ impl KartaContext {
             &self.ast_heap,
             &self.pattern_heap,
             expr_ast,
-            Declare::new(&self.ast_heap, &self.pattern_heap, &mut self.elab),
+            Declare::new(
+                &self.ast_heap,
+                &self.pattern_heap,
+                &self.symbol_table,
+                &mut self.elab,
+            ),
         )?;
         if !declare.errors().is_empty() {
             return Err(declare.errors()[0].clone());
