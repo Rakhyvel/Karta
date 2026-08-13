@@ -97,21 +97,3 @@ even? (:n int?) = (== (% n 2) 0)
 give-me-even (:even? _) = println "Thank you!"
 give-me-even _          = println "lame"
 ```
-
-## Open Multimethods
-Karta uses open multimethods for polymorphism. This allows you to extend any function with your own custom pattern matches.
-```
-;; In core library:
-length (:list? x) = ; length of a list
-length (:map?  x) = ; length of the key set of the map
-
-;; In your own custom file
-import core
-
-my-type = ; define your own type predicate
-
-(core.length) (:my-type x) = ; extend length to work on your own custom type
-
-;; In another file
-print-length x = println (length x) ; this function works for any value that `length` accepts!
-```

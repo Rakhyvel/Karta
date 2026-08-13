@@ -724,8 +724,8 @@ impl<'a> Eval<'a> {
                     span: Span { start: 67, end: 67 },
                     kind: ErrorKind::CannotBinop {
                         verb: "apply",
-                        lhs: format!("{lhs:?}"), // TODO: An eval-aware value renderer
-                        rhs: format!("{rhs:?}"), // TODO: An eval-aware value renderer
+                        lhs: format!("{}", self.make_value_ref(lhs)),
+                        rhs: format!("{}", self.make_value_ref(rhs)),
                     },
                 });
             }
@@ -826,8 +826,8 @@ impl<'a> Eval<'a> {
                 span: Span { start: 67, end: 67 },
                 kind: ErrorKind::CannotBinop {
                     verb,
-                    lhs: format!("{lhs:?}"), // TODO: An eval-aware value renderer
-                    rhs: format!("{rhs:?}"), // TODO: An eval-aware value renderer
+                    lhs: format!("{}", self.make_value_ref(lhs)),
+                    rhs: format!("{}", self.make_value_ref(rhs)),
                 },
             }),
         }
@@ -844,7 +844,7 @@ impl<'a> Eval<'a> {
                 span: Span { start: 67, end: 67 },
                 kind: ErrorKind::CannotUnop {
                     verb: "negate",
-                    expr: format!("{arg:?}"), // TODO: An eval-aware value renderer
+                    expr: format!("{}", self.make_value_ref(arg)),
                 },
             }),
         }
@@ -856,7 +856,7 @@ impl<'a> Eval<'a> {
                 span: Span { start: 67, end: 67 },
                 kind: ErrorKind::Unexpected {
                     expected: String::from("tuple"),
-                    got: format!("{value:?}"), // TODO: An eval-aware value renderer
+                    got: format!("{}", self.make_value_ref(value)),
                 },
             });
         };
@@ -872,6 +872,14 @@ impl<'a> Eval<'a> {
             Value::TRUE
         } else {
             Heap::EMPTY_MAP
+        }
+    }
+
+    fn make_value_ref(&'_ self, value: Value) -> ValueRef<'_> {
+        ValueRef {
+            heap: self.heap,
+            atoms: self.atoms,
+            value,
         }
     }
 }

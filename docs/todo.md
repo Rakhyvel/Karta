@@ -14,7 +14,7 @@
     - [ ] type predicates
     - [ ] `match` ... `with`
 - [ ] imports
-- [ ] eval-aware Value formatter
+- [x] eval-aware Value formatter
 - [ ] define all builtins
 - [x] store an error list, pass that along
 - [ ] core.k
