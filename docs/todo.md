@@ -24,7 +24,6 @@
 - [ ] Allow tuples/lists to be keys
 - [ ] constant pool
 - [ ] make maps hash maps rather than pair lists
-- [ ] laziness
 - [ ] string interpolation, string/char escapes
 - [ ] `where`, `$` to end of line
 
@@ -34,7 +33,7 @@
 - [ ] applicative algebra combinators `|`, `&`, `~`
 
 ### CLI
-- [ ] actually make it exist, take in a file and eval the `main` symbol
+- [x] actually make it exist, take in a file and eval the `main` symbol
 - [ ] repl
 
 ### lang server

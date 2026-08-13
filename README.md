@@ -1,5 +1,5 @@
 # Karta
-Karta is a dynamically typed, lazy functional programming language with a focus on expressivity.
+Karta is a dynamically typed, functional programming language with a focus on expressivity.
 
 ## Map Oriented
 The name "Karta" derives from the fact that maps are a core data structure. Data structures in Karta are built off of immutable maps. Lists are maps, tuples are maps, sets are maps, and functions can be conceptually thought of as programmatic maps. 
