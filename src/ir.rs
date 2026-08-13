@@ -128,6 +128,10 @@ pub enum Value {
 }
 
 impl Value {
+    pub const TRUE: Value = Value::Atom(AtomTable::TRUE);
+    pub const HEAD: Value = Value::Atom(AtomTable::HEAD);
+    pub const TAIL: Value = Value::Atom(AtomTable::TAIL);
+
     /// Interpret this value as an integer
     pub fn as_i64(&self) -> Option<i64> {
         debug_assert!(!matches!(*self, Value::Undefined));
@@ -378,8 +382,8 @@ impl<'a> Lowerer<'a> {
             Ast::List(elems) => {
                 let mut addr = self.emit_map(vec![]);
 
-                let head_slot = self.emit_const(Value::Atom(AtomTable::HEAD));
-                let tail_slot = self.emit_const(Value::Atom(AtomTable::TAIL));
+                let head_slot = self.emit_const(Value::HEAD);
+                let tail_slot = self.emit_const(Value::TAIL);
                 for elem in elems.iter().rev() {
                     let elem_slot = self.lower_ast(*elem);
                     addr = self.emit_map(vec![(head_slot, elem_slot), (tail_slot, addr)]);
@@ -520,7 +524,7 @@ impl<'a> Lowerer<'a> {
                         let key = self.lower_const_pattern(*k);
                         let val = match v {
                             Some(v) => self.lower_const_pattern(*v),
-                            None => self.emit_const(Value::Atom(AtomTable::TRUE)),
+                            None => self.emit_const(Value::TRUE),
                         };
                         (key, val)
                     })
@@ -674,8 +678,8 @@ impl<'a> Lowerer<'a> {
             Pattern::List(elems, tail) => {
                 let mut sites = Vec::new();
 
-                let head_slot = self.emit_const(Value::Atom(AtomTable::HEAD));
-                let tail_slot = self.emit_const(Value::Atom(AtomTable::TAIL));
+                let head_slot = self.emit_const(Value::HEAD);
+                let tail_slot = self.emit_const(Value::TAIL);
 
                 let mut cell = src;
 

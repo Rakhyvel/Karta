@@ -199,13 +199,24 @@ impl Heap {
         let mut addr = HeapAddr::EMPTY_MAP;
         for c in str.chars().rev() {
             addr = self.alloc_map(vec![
-                (Value::Atom(AtomTable::HEAD), Value::Char(c)),
-                (Value::Atom(AtomTable::TAIL), Value::Map(addr)),
+                (Value::HEAD, Value::Char(c)),
+                (Value::TAIL, Value::Map(addr)),
             ])
         }
 
         self.strings.insert(id, addr);
         addr
+    }
+
+    fn cons_iter(&self, addr: HeapAddr) -> impl Iterator<Item = Value> + '_ {
+        std::iter::successors(Some(addr), move |a| {
+            match self.map_lookup(*a, Value::TAIL).ok()? {
+                Value::Map(next) if next != HeapAddr::EMPTY_MAP => Some(next),
+                _ => None,
+            }
+        })
+        .filter(|a| *a != HeapAddr::EMPTY_MAP)
+        .filter_map(|a| self.map_lookup(a, Value::HEAD).ok())
     }
 
     fn list_keys(&self, addr: HeapAddr) -> bool {
@@ -214,12 +225,8 @@ impl Heap {
         };
 
         pairs.len() == 2
-            && pairs
-                .iter()
-                .any(|(k, _)| matches!(*k, Value::Atom(AtomTable::HEAD)))
-            && pairs
-                .iter()
-                .any(|(k, _)| matches!(*k, Value::Atom(AtomTable::TAIL)))
+            && pairs.iter().any(|(k, _)| matches!(*k, Value::HEAD))
+            && pairs.iter().any(|(k, _)| matches!(*k, Value::TAIL))
     }
 
     fn all_char_values(&self, addr: HeapAddr) -> bool {
@@ -249,9 +256,7 @@ impl Heap {
             return false;
         };
 
-        pairs
-            .iter()
-            .all(|(_, v)| matches!(*v, Value::Atom(AtomTable::TRUE)))
+        pairs.iter().all(|(_, v)| matches!(*v, Value::TRUE))
     }
 }
 
@@ -305,49 +310,32 @@ impl<'a> ValueRef<'a> {
         }
     }
 
-    fn fmt_string(&self, f: &mut std::fmt::Formatter<'_>, mut addr: HeapAddr) -> std::fmt::Result {
+    fn fmt_string(&self, f: &mut std::fmt::Formatter<'_>, addr: HeapAddr) -> std::fmt::Result {
         write!(f, "\"")?;
-        let head_key = Value::Atom(AtomTable::HEAD);
-        let tail_key = Value::Atom(AtomTable::TAIL);
-        while addr != HeapAddr::EMPTY_MAP {
-            let Value::Char(c) = self.heap.map_lookup(addr, head_key).unwrap() else {
+
+        for elem in self.heap.cons_iter(addr) {
+            let Value::Char(c) = elem else {
                 unreachable!("already checked");
             };
             write!(f, "{c}")?;
-            let Value::Map(next_addr) = self.heap.map_lookup(addr, tail_key).unwrap() else {
-                unreachable!("already checked");
-            };
-            addr = next_addr;
         }
+
         write!(f, "\"")
     }
 
     fn fmt_list(
         &self,
         f: &mut std::fmt::Formatter<'_>,
-        mut addr: HeapAddr,
+        addr: HeapAddr,
         depth: usize,
     ) -> std::fmt::Result {
         write!(f, "[")?;
-        let head_key = Value::Atom(AtomTable::HEAD);
-        let tail_key = Value::Atom(AtomTable::TAIL);
-        while addr != HeapAddr::EMPTY_MAP {
-            let elem = self.heap.map_lookup(addr, head_key).unwrap();
 
-            let elem = ValueRef {
-                value: elem,
-                heap: self.heap,
-                atoms: self.atoms,
-            };
-            elem.fmt_depth(f, depth + 1)?;
-
-            let Value::Map(next_addr) = self.heap.map_lookup(addr, tail_key).unwrap() else {
-                unreachable!("already checked");
-            };
-            addr = next_addr;
-            if addr != HeapAddr::EMPTY_MAP {
+        for (i, elem) in self.heap.cons_iter(addr).enumerate() {
+            if i > 0 {
                 write!(f, ", ")?;
             }
+            self.child(elem).fmt_depth(f, depth + 1)?;
         }
         write!(f, "]")
     }
@@ -365,18 +353,12 @@ impl<'a> ValueRef<'a> {
         };
 
         for i in 0..pairs.len() {
-            let elem = self.heap.map_lookup(addr, Value::Int(i as i64)).unwrap();
-
-            let elem = ValueRef {
-                value: elem,
-                heap: self.heap,
-                atoms: self.atoms,
-            };
-            elem.fmt_depth(f, depth + 1)?;
-
-            if i + 1 != pairs.len() {
+            if i > 0 {
                 write!(f, ", ")?;
             }
+            let elem = self.heap.map_lookup(addr, Value::Int(i as i64)).unwrap();
+
+            self.child(elem).fmt_depth(f, depth + 1)?;
         }
 
         write!(f, ")")
@@ -395,16 +377,10 @@ impl<'a> ValueRef<'a> {
         };
 
         for (i, (k, _)) in pairs.iter().enumerate() {
-            let elem = ValueRef {
-                value: *k,
-                heap: self.heap,
-                atoms: self.atoms,
-            };
-            elem.fmt_depth(f, depth + 1)?;
-
-            if i + 1 != pairs.len() {
+            if i > 0 {
                 write!(f, ", ")?;
             }
+            self.child(*k).fmt_depth(f, depth + 1)?;
         }
 
         write!(f, "}}")
@@ -423,25 +399,14 @@ impl<'a> ValueRef<'a> {
         };
 
         for (i, (k, v)) in pairs.iter().enumerate() {
-            let key = ValueRef {
-                value: *k,
-                heap: self.heap,
-                atoms: self.atoms,
-            };
-            key.fmt_depth(f, depth + 1)?;
+            if i > 0 {
+                write!(f, ", ")?;
+            }
+            self.child(*k).fmt_depth(f, depth + 1)?;
 
             write!(f, " = ")?;
 
-            let value = ValueRef {
-                value: *v,
-                heap: self.heap,
-                atoms: self.atoms,
-            };
-            value.fmt_depth(f, depth + 1)?;
-
-            if i + 1 != pairs.len() {
-                write!(f, ", ")?;
-            }
+            self.child(*v).fmt_depth(f, depth + 1)?;
         }
 
         write!(f, "}}")
@@ -477,35 +442,34 @@ impl<'a> ValueRef<'a> {
 
     /// Interpret this value as a string.
     pub fn as_string(&self) -> Result<String, KartaError> {
-        let mut curr = self.value;
         let mut retval = String::new();
 
-        while curr.is_truthy() {
-            let Value::Map(addr) = curr else {
-                return Err(KartaError {
-                    span: Span { start: 67, end: 67 },
-                    kind: ErrorKind::Unexpected {
-                        expected: String::from("a string"),
-                        got: format!("{:?}", self.value),
-                    },
-                });
-            };
-            let c = self
-                .heap
-                .map_lookup(addr, Value::Atom(AtomTable::HEAD))?
-                .as_char()
-                .ok_or(KartaError {
-                    span: Span { start: 67, end: 67 },
-                    kind: ErrorKind::Unexpected {
-                        expected: String::from("a char"),
-                        got: format!("{:?}", curr),
-                    },
-                })?;
+        let Value::Map(addr) = self.value else {
+            return Err(KartaError {
+                span: Span { start: 67, end: 67 },
+                kind: ErrorKind::Unexpected {
+                    expected: String::from("a string"),
+                    got: format!("{:?}", self.value),
+                },
+            });
+        };
+
+        for c in self.heap.cons_iter(addr) {
+            let c = c.as_char().ok_or(KartaError {
+                span: Span { start: 67, end: 67 },
+                kind: ErrorKind::Unexpected {
+                    expected: String::from("a char"),
+                    got: format!("{:?}", c),
+                },
+            })?;
             retval.push(c);
-            curr = self.heap.map_lookup(addr, Value::Atom(AtomTable::TAIL))?;
         }
 
         Ok(retval)
+    }
+
+    fn child(&'_ self, value: Value) -> ValueRef<'_> {
+        ValueRef { value, ..*self }
     }
 }
 
@@ -652,7 +616,7 @@ impl<'a> Eval<'a> {
                     EvalMode::Normal => {}
 
                     // Probing for acceptance and we got it, return .t
-                    EvalMode::Probe => self.ret(Value::Atom(AtomTable::TRUE)),
+                    EvalMode::Probe => self.ret(Value::TRUE),
                 }
             }
 
@@ -909,7 +873,7 @@ impl<'a> Eval<'a> {
 
     fn make_bool(&self, cond: bool) -> Value {
         if cond {
-            Value::Atom(AtomTable::TRUE)
+            Value::TRUE
         } else {
             Heap::EMPTY_MAP
         }
