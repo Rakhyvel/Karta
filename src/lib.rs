@@ -91,13 +91,16 @@ impl KartaContext {
             .frontend(&source, ProcessKind::File)
             .map_err(|err| err.in_source(&source, path).to_string())?;
 
-        let want_sym_id = self.symbol_table.intern("main");
+        const MAIN_SYMBOL_NAME: &str = "main";
+        let want_sym_id = self.symbol_table.intern(MAIN_SYMBOL_NAME);
         let want = self
             .elab
             .lookup_root(want_sym_id)
             .ok_or(KartaError {
                 span: Span { start: 0, end: 0 },
-                kind: ErrorKind::DivisionByZero, // TODO: A "not-defined" error
+                kind: ErrorKind::UnresolvedIdentifier {
+                    symbol_name: MAIN_SYMBOL_NAME.to_string(),
+                },
             })
             .map_err(|err| err.in_source(&source, path).to_string())?;
 

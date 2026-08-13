@@ -230,11 +230,7 @@ impl Heap {
     }
 
     fn all_char_values(&self, addr: HeapAddr) -> bool {
-        let HeapObj::Map(pairs) = self.deref(addr) else {
-            return false;
-        };
-
-        pairs.iter().all(|(_, v)| matches!(*v, Value::Char(_)))
+        self.cons_iter(addr).all(|v| matches!(v, Value::Char(_)))
     }
 
     fn tuple_keys(&self, addr: HeapAddr) -> bool {
@@ -276,7 +272,7 @@ impl<'a> ValueRef<'a> {
         match self.value {
             Value::Undefined => write!(f, "undefined"),
             Value::Int(n) => write!(f, "{n}"),
-            Value::Float(n) => write!(f, "{n}"),
+            Value::Float(n) => write!(f, "{n:?}"), // Print with :? to get the .0 decimal
             Value::Char(c) => write!(f, "'{c}'"),
             Value::Atom(id) => {
                 let str = self.atoms.get(id);

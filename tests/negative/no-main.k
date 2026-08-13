@@ -1,1 +1,1 @@
-; expect-error: no-main
+; tests/negative/no-main.k:1:1: error: cannot resolve symbol `main`

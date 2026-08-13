@@ -27,10 +27,7 @@ fn run_dir(dir: &str, kind: Expect) {
     // Go through each file and run it, and make sure it does what its supposed to
     for path in files {
         let src = fs::read_to_string(&path).unwrap();
-        let prefix = match kind {
-            Expect::Value => "; expect:",
-            Expect::Error => "; expect-error:",
-        };
+        let prefix = "; ";
         let name = path.display();
 
         // get the expected string

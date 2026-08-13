@@ -89,7 +89,6 @@ impl<'a> Parser<'a> {
                 | TokenKind::Atom
                 | TokenKind::Builtin
                 | TokenKind::Identifier
-                | TokenKind::Indent
                 | TokenKind::LeftBrace
                 | TokenKind::LeftParen
                 | TokenKind::LeftSquare
@@ -243,6 +242,7 @@ impl<'a> Parser<'a> {
                     bindings = self.parse_bindings(TokenKind::In);
                 }
                 self.expect(TokenKind::In)?;
+                self.accept_newlines();
                 let expr = self.let_in_expr()?;
                 Ok(self.asts.create_let(self.peek().span, bindings, expr))
             }
@@ -663,7 +663,7 @@ impl<'a> Parser<'a> {
 
     fn parse_indent(&mut self) -> Result<AstId, KartaError> {
         self.expect(TokenKind::Indent)?;
-        let retval = self.lambda_expr()?;
+        let retval = self.let_in_expr()?;
         self.accept_newlines();
         self.expect(TokenKind::Dedent)?;
         Ok(retval)
